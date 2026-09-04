@@ -2,11 +2,11 @@
 r"""
 PyInstaller spec — 打包 PASTA (Parallel Astrodynamic Solver for Trajectory Analysis) Windows 应用。
 
-用法(在装了 pykep/pygmo 的那个 venv 里):
+Run as:
     pip install pyinstaller
-    pyinstaller pykep_test.spec          # 产物 dist\test\test.exe (onedir 模式)
+    pyinstaller pykep_test.spec
 
-关键点(对应 pykep 运行时机制):
+Important Tips:
     - pykep\_vendor : heyoka 纯 Python 绑定。pykep\__init__.py 在运行时把它注入 sys.path,
                       PyInstaller 静态分析看不到,必须整目录(含 .py)打进包。
     - pykep\lib     : 全部 DLL(kep3.dll、heyoka.dll、mkl_intel_thread.3.dll、libgcc 等),
@@ -55,14 +55,15 @@ except Exception:
 # 若在非常规上下文 exec (罕见), 回退到当前工作目录。
 _here = SPECPATH if 'SPECPATH' in globals() else os.getcwd()
 datas += [
-    (os.path.join(_here, 'webapp/templates'), 'webapp/templates'),
-    (os.path.join(_here, 'webapp/static'),    'webapp/static'),
+    (os.path.join(_here, 'webapp/templates'),     'webapp/templates'),
+    (os.path.join(_here, 'webapp/static'),        'webapp/static'),
+    (os.path.join(_here, 'licenses'),             'licenses'),
+    (os.path.join(_here, 'LICENSE'),              '.'),
+    (os.path.join(_here, 'ThirdPartyNotice.md'),  '.'),
 ]
-# 运行时目录: 冻结版 exe 首次启动时自动创建 (JobManager/预设),
-# 但 onedir 下用户数据目录建议留在 exe 旁边, 不在包内。
+# 运行时目录: 冻结版 exe 首次启动时自动创建 (JobManager/预设)
 
 # ---- VC runtime: 打进 _internal 顶层, 目标机无需安装 VC++ Redistributable ----
-# (pykep/pygmo 是 C++ 扩展, 依赖 msvcp140.dll; 只放系统目录会导致未装 redist 的机器加载失败)
 sys32 = os.path.join(os.environ.get('SystemRoot', r'C:\Windows'), 'System32')
 for _dll in ('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll'):
     _p = os.path.join(sys32, _dll)
