@@ -15,6 +15,7 @@ from __future__ import annotations
 import numpy as np
 import pygmo as pg
 
+from . import slog
 from .udp import TOF_UDP, DSM_UDP
 
 
@@ -85,6 +86,10 @@ def _run_sade_task(kind, cfg, t0, tof, w1, w2, gen, pop, seed):
         f, x = run_sade(udp, gen, pop, runs=1, seed_base=seed)
         return f, list(x)
     except Exception:
+        import traceback
+        slog.err(f"[worker sade] kind={kind} t0={t0} tof={tof} seed={seed} " +
+                 f"gen={gen} pop={pop} cfg={cfg.name}\n"
+                 f"{traceback.format_exc()}")
         return 1e18, []
 
 
@@ -98,6 +103,9 @@ def _sbplx_task(kind, cfg, t0, tof, w1, w2, x0, maxeval):
         pop = make_nlopt("sbplx", maxeval=maxeval).evolve(pop)
         return pop.champion_f[0], list(pop.champion_x)
     except Exception:
+        import traceback
+        slog.err(f"[worker sbplx] kind={kind} t0={t0} x0={x0} maxeval={maxeval} cfg={cfg.name}\n"
+                 f"{traceback.format_exc()}")
         return 1e18, list(x0)
 
 

@@ -26,6 +26,7 @@ from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request, send_from_directory
 
+from orbcalc import slog
 from orbcalc.config import TrajConfig, PRESETS, sanitize_name
 from orbcalc.sysconfig import SysConfig, load_sysconfig, save_sysconfig, sysconfig_path
 
@@ -102,6 +103,7 @@ class JobManager:
                 self._start(jid)
             else:
                 self._queue.append(jid)
+        slog.inf(f"[job] submit jid={jid} name={cfg.name} jobs={cfg.jobs} seq={cfg.seq}")
         return jid
 
     def _start(self, jid: str) -> None:
@@ -128,6 +130,7 @@ class JobManager:
             stdout=log_f, stderr=log_f,
             creationflags=CREATE_NO_WINDOW,
         )
+        slog.inf(f"[job] start jid={jid} cmd={' '.join(cmd)}")
 
     def _maybe_next(self) -> None:
         with self._lock:
@@ -173,6 +176,8 @@ class JobManager:
             job["status"] = "failed"
         job["rc"] = rc
         job["finished"] = time.time()
+        slog.inf(f"[job] end jid={jid} status={job['status']} rc={rc} "
+                 f"elapsed={job['finished'] - job.get('started', job['finished']):.1f}s")
         with self._lock:
             if self._active == jid:
                 self._active = None
@@ -290,6 +295,7 @@ class JobManager:
             (Path(job["dir"]) / "cancelled.txt").touch()
         except OSError:
             pass
+        slog.inf(f"[job] cancel jid={jid}")
         return True
 
     def delete(self, jid: str) -> bool:
@@ -314,6 +320,7 @@ class JobManager:
                 dirpath = d
         import shutil
         shutil.rmtree(dirpath, ignore_errors=True)   # 连 log/result/plot 等产物一并删除
+        slog.inf(f"[job] delete jid={jid}")
         return True
 
 
@@ -415,6 +422,7 @@ def create_app() -> Flask:
     @app.post("/api/shutdown")
     def shutdown():
         """优雅退出后端: 终止活跃任务 -> 删锁文件 -> 退出进程."""
+        slog.inf("[web] shutdown 请求: 取消活跃任务并退出")
         try:
             if jm._active:
                 jm.cancel(jm._active)

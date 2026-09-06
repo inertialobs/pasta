@@ -2,20 +2,24 @@
 """
 唯一计算入口 (供 web JobManager 以子进程调用, 也可独立命令行使用):
 
-    python -m orbcalc.run_cli --config runs/<job>/config.json --jobs 8 --outdir runs/<job>
+    python -m orbcalc.run_cli --config runs/<job>/config.json --jobs 8 --outdir runs/<job> [--debug]
 
 行为与 temp/EVVEJU_TOF_1DSM_mp.py 主流程逐位一致 (cfg 驱动):
     [1] 扫描 -> [2] 细化 (run_scan)   | [3] 弹道播种 (run_seed, smoke 自动跳过)
     [w] 内置热启动 (warm_x 非空)      | [4] 宽 J->U 压缩 (run_compress)
     [5] 紧 J->U 前沿压缩 (run_frontier)| [6] pick_best -> 报告/汇总/绘图数据
 
+日志: 统一走 orbcalc.slog (单写入者, [时间戳][级别] 标签+上下文)。
+    绑定到 sys.stdout (web 子进程被 JobManager 重定向到 log.txt)。
+    启动时 dump 环境 (版本/PID/OS/核数/配置摘要), 便于反馈定位。
+
 产物 (outdir 内):
-    log.txt        全程日志 (含阶段 print, stdout 同步)
+    log.txt        全程日志 (统一 slog 格式)
     best_x.npy     最优设计向量
     result.json    结构化摘要 (网页结果卡)
     plot.json      3D 图数据 (Plotly)
     trajectory.png 静态图 (Agg, 尽力而为)
-退出码: 0 = 完成 (含\"无可行解\"); 2 = 流水线失败/异常。
+退出码: 0 = 完成 (含"无可行解"); 2 = 流水线失败/异常。
 """
 from __future__ import annotations
 
@@ -23,9 +27,20 @@ import argparse
 import json
 import multiprocessing
 import os
+import platform
 import sys
 import time
 import traceback
+
+import numpy as np
+
+from .config import TrajConfig
+from .udp import TOF_UDP, DSM_UDP
+from .decode_report import decode, report, summarize
+from .plot_data import build_plot_json, render_png
+from .stages import (phase_scan_mp, phase_refine_mp, phase_ballistic_seed_mp,
+                     compress_pass_mp, pick_best)
+from . import slog
 
 
 def _force_utf8_stdio():
@@ -36,20 +51,19 @@ def _force_utf8_stdio():
         except Exception:
             pass
 
-import numpy as np
 
-from .config import TrajConfig
-from .udp import TOF_UDP, DSM_UDP
-from .decode_report import decode, report, summarize
-from .plot_data import build_plot_json, render_png
-from .stages import (phase_scan_mp, phase_refine_mp, phase_ballistic_seed_mp,
-                     compress_pass_mp, pick_best)
-
-
-def log(msg, logf):
-    print(msg, flush=True)
-    logf.write(msg + "\n")
-    logf.flush()
+def _dump_env(cfg):
+    slog.inf(f"[env] PASTA run_cli | pid={os.getpid()} | py={platform.python_version()} | "
+             f"os={platform.platform()} | cpu_cores={os.cpu_count()}")
+    slog.inf(f"[env] seq={cfg.seq} | n_legs={len(cfg.seq) - 1} | objective={cfg.objective} | "
+             f"dsm_limit={cfg.dsm_limit_ms:.0f} m/s | vinf_bounds={cfg.vinf_bounds_kmps}")
+    slog.inf(f"[env] eras={cfg.eras} | tof_bounds={cfg.tof_bounds} | rp_ub={cfg.rp_ub}")
+    slog.inf(f"[env] jobs={cfg.jobs} | smoke={cfg.smoke} | scan_keep={cfg.scan_keep} | "
+             f"refine_keep={cfg.refine_keep} | era_step_d={cfg.era_step_d}")
+    slog.inf(f"[env] run: scan={cfg.run_scan} seed={cfg.run_seed} compress={cfg.run_compress} "
+             f"frontier={cfg.run_frontier}")
+    slog.inf(f"[env] warm_x={'yes' if cfg.warm_x is not None else 'no'} | penalty={cfg.penalty} | "
+             f"frontier_penalty={cfg.frontier_penalty} | eta_bounds={cfg.eta_bounds}")
 
 
 def run(args):
@@ -60,17 +74,14 @@ def run(args):
 
     outdir = os.path.abspath(args.outdir)
     os.makedirs(outdir, exist_ok=True)
-    log_path = os.path.join(outdir, "log.txt")
-    logf = open(log_path, "a", encoding="utf-8")
+    _dump_env(cfg)
 
     t_start = time.time()
     summary = {"job": cfg.name, "status": "ok", "error": None}
     try:
         import pykep as pk
         import pygmo as pg
-        log(f"pykep {pk.__version__}  pygmo {pg.__version__}  numpy {np.__version__}", logf)
-        log(f"seq = {cfg.seq},  DSM limit = {cfg.dsm_limit_ms:.0f} m/s,  "
-            f"objective = {cfg.objective},  jobs = {cfg.jobs},  smoke = {cfg.smoke}", logf)
+        slog.inf(f"[env] pykep {pk.__version__}  pygmo {pg.__version__}  numpy {np.__version__}")
 
         candidates = []
         from concurrent.futures import ProcessPoolExecutor
@@ -81,16 +92,19 @@ def run(args):
         _ctx = ProcessPoolExecutor(max_workers=cfg.jobs) if need_pool else nullcontext(None)
         with _ctx as ex:
             if cfg.run_scan:
+                slog.inf("[phase] [1/6] scan 开始")
                 cands = phase_scan_mp(ex, cfg)
+                slog.inf("[phase] [2/6] refine 开始")
                 best_ref = phase_refine_mp(ex, cfg, cands)
                 if best_ref is None:
-                    log("[main] refine failed", logf)
+                    slog.err("[main] refine failed (all windows sade failed)")
                     summary["status"] = "error"
                     summary["error"] = "refine failed (all windows sade failed)"
                     return 2
                 f_ref, x_ref, info_ref, udp_ref = best_ref
                 candidates.append((x_ref, udp_ref))
                 if cfg.run_seed and not cfg.smoke:
+                    slog.inf("[phase] [3/6] ballistic seed")
                     x_seed = phase_ballistic_seed_mp(ex, cfg, x_ref)
                     candidates.append((x_seed, DSM_UDP(cfg, t0=[x_seed[0] - 30, x_seed[0] + 30])))
 
@@ -98,11 +112,11 @@ def run(args):
                 try:
                     uw = TOF_UDP(cfg, t0=[cfg.warm_x[0] - 30, cfg.warm_x[0] + 30])
                     iw = decode(cfg.warm_x, uw.udp)
-                    log(f"[warn] 内置热启动: TOF={sum(iw['tofs']):.0f} d "
-                        f"({sum(iw['tofs']) / 365.25:.2f} yr)  DSM={iw['dsm_total']:.0f} m/s", logf)
+                    slog.inf(f"[warm] 内置热启动: TOF={sum(iw['tofs']):.0f} d "
+                             f"({sum(iw['tofs']) / 365.25:.2f} yr)  DSM={iw['dsm_total']:.0f} m/s")
                     candidates.append((cfg.warm_x, uw))
                 except Exception as e:
-                    log(f"[warn] skipped: {e}", logf)
+                    slog.wrn(f"[warm] skipped: {e}")
 
             if (cfg.run_compress or cfg.run_frontier) and candidates:
                 def _key(item):
@@ -112,12 +126,14 @@ def run(args):
                 candidates.sort(key=_key)
                 seeds = candidates[:2]
                 if cfg.run_compress:
+                    slog.inf("[phase] [4/6] wide compress")
                     for k, (sx, sudp) in enumerate(seeds):
                         xw = compress_pass_mp(ex, cfg, sx, f"4/6 compress wide #{k + 1}",
                                               [2500, 4300], cfg.penalty[0], cfg.penalty[1],
                                               smoke=cfg.smoke)
                         candidates.append((xw, TOF_UDP(cfg, t0=[sx[0] - 30, sx[0] + 30])))
                 if cfg.run_frontier:
+                    slog.inf("[phase] [5/6] frontier tight compress")
                     bi, bx, budp = pick_best(cfg, candidates)
                     xf = compress_pass_mp(ex, cfg, bx, "5/6 frontier tight",
                                           [2200, 2900], cfg.frontier_penalty[0],
@@ -125,42 +141,41 @@ def run(args):
                     candidates.append((xf, TOF_UDP(cfg, t0=[xf[0] - 30, xf[0] + 30])))
 
         if not candidates:
-            log("[main] no candidates", logf)
+            slog.wrn("[main] no candidates")
             summary["status"] = "no_candidates"
-            _write_artifacts(args, cfg, None, None, summary, logf, t_start)
+            _write_artifacts(args, cfg, None, None, summary, t_start)
             return 0
 
+        slog.inf("[phase] [6/6] pick_best")
         bi, bx, budp = pick_best(cfg, candidates)
         title = f"*** BEST {cfg.name} SOLUTION ***"
-        log("\n" + report(bi, cfg, title) + "\n", logf)
+        slog.inf("\n" + report(bi, cfg, title) + "\n")
         summary["warm_used"] = cfg.warm_x is not None
-        _write_artifacts(args, cfg, bi, bx, summary, logf, t_start)
-        log(f"[main] done in {time.time() - t_start:.1f} s", logf)
+        _write_artifacts(args, cfg, bi, bx, summary, t_start)
+        slog.inf(f"[main] done in {time.time() - t_start:.1f} s")
         return 0
     except KeyboardInterrupt:
+        slog.wrn("[main] interrupted")
         summary["status"] = "cancelled"
-        _write_result(args, summary, logf)
-        log("[main] interrupted", logf)
+        _write_result(args, summary)
         return 130
     except Exception:
         summary["status"] = "error"
         summary["error"] = traceback.format_exc()
-        log("[main] error:\n" + summary["error"], logf)
-        _write_result(args, summary, logf)
+        slog.err("[main] error:\n" + summary["error"])
+        _write_result(args, summary)
         return 2
     finally:
         # 兜底: 异常/退出时释放所有 multiprocessing 子进程 (防孤儿池 worker)。
-        # 正常完成时池已由 with 回收, active_children 为空 -> 无操作;
-        # 池 broken / 阶段崩溃时残留 worker 在这里被终止。
         try:
             for _ch in multiprocessing.active_children():
+                slog.dbg(f"[main] terminating stray worker pid={_ch.pid}")
                 _ch.terminate()
         except Exception:
             pass
-        logf.close()
 
 
-def _write_artifacts(args, cfg, info, bx, summary, logf, t_start):
+def _write_artifacts(args, cfg, info, bx, summary, t_start):
     if info is not None:
         summary.update(summarize(info, cfg))
         summary["elapsed_s"] = round(time.time() - t_start, 1)
@@ -169,29 +184,29 @@ def _write_artifacts(args, cfg, info, bx, summary, logf, t_start):
             json.dump(build_plot_json(cfg, info), f, ensure_ascii=False)
         try:
             render_png(cfg, info, os.path.join(args.outdir, "trajectory.png"))
-            log(f"[artifacts] png -> {os.path.join(args.outdir, 'trajectory.png')}", logf)
+            slog.inf(f"[artifacts] png -> {os.path.join(args.outdir, 'trajectory.png')}")
         except Exception as e:
-            log(f"[artifacts] png skipped: {e}", logf)
+            slog.wrn(f"[artifacts] png skipped: {e}")
     summary["elapsed_s"] = round(time.time() - t_start, 1)
-    _write_result(args, summary, logf)
+    _write_result(args, summary)
 
 
-def _write_result(args, summary, logf):
+def _write_result(args, summary):
     with open(os.path.join(args.outdir, "result.json"), "w", encoding="utf-8") as f:
         json.dump(summary, f, ensure_ascii=False)
-    log(f"[result] -> {os.path.join(args.outdir, 'result.json')}", logf)
+    slog.inf(f"[result] -> {os.path.join(args.outdir, 'result.json')}")
 
 
 def main():
     _force_utf8_stdio()
-    # PyInstaller 冻结: ProcessPoolExecutor spawn 需要 multiprocessing 初始化
-    import multiprocessing
     multiprocessing.freeze_support()
     ap = argparse.ArgumentParser(description="orbcalc 计算入口 (web 子进程 / CLI)")
     ap.add_argument("--config", required=True, help="TrajConfig JSON 路径")
     ap.add_argument("--jobs", type=int, default=0, help="覆盖 cfg.jobs (0 = 用配置值)")
     ap.add_argument("--outdir", required=True, help="产物目录 (log/result/plot/best_x)")
+    ap.add_argument("--debug", action="store_true", help="DEBUG 级别日志")
     args = ap.parse_args()
+    slog.setup(stream=sys.stdout, debug=args.debug)
     sys.exit(run(args))
 
 

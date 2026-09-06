@@ -14,6 +14,8 @@ from __future__ import annotations
 import numpy as np
 import pykep as pk
 
+from . import slog
+
 from .engines import (_run_sade_task, _build_udp, run_sade, local_refine,
                       multistart_mp, narrow_tof_box)
 from .udp import TOF_UDP, DSM_UDP
@@ -21,19 +23,19 @@ from .decode_report import decode
 
 
 def phase_scan_mp(executor, cfg):
-    """[1/6] 发射窗口粗扫: 每个窗口一轮 sade -> 并行任务."""
+    """发射窗口粗扫: 每个窗口一轮 sade -> 并行任务."""
     step = 90.0 if cfg.smoke else 60.0
     if cfg.era_step_d is not None:
         step = float(cfg.era_step_d)
     gen = 60 if cfg.smoke else 200
     pop = 12 if cfg.smoke else 24
     runs = 1 if cfg.smoke else 2
-    print(f"[1/6 scan] step={step:.0f}d sade(gen={gen},pop={pop}) x{runs} [parallel]")
+    slog.inf(f"[scan] step={step:.0f}d sade(gen={gen},pop={pop}) x{runs} [parallel]")
     ranges = cfg.era_mjd()
     windows = []
     for (t0_lo, t0_hi) in ranges:
-        print(f"  window {pk.epoch(t0_lo).to_datetime().date()} .. "
-              f"{pk.epoch(t0_hi).to_datetime().date()}")
+        slog.inf(f"  window {pk.epoch(t0_lo).to_datetime().date()} .. "
+                 f"{pk.epoch(t0_hi).to_datetime().date()}")
         t = t0_lo
         while t <= t0_hi:
             windows.append(t)
@@ -58,19 +60,19 @@ def phase_scan_mp(executor, cfg):
         udp = TOF_UDP(cfg, t0=[t - 30.0, t + 30.0])
         info = decode(x, udp.udp)
         results.append((f, t, x, info))
-        print(f"  t0={pk.epoch(t).to_datetime().date()}  obj={f:9.0f} d  "
-              f"TOF={sum(info['tofs']):7.0f} d ({sum(info['tofs']) / 365.25:5.1f} yr)  "
-              f"DSM={info['dsm_total']:7.0f} m/s", flush=True)
+        slog.inf(f"  t0={pk.epoch(t).to_datetime().date()}  obj={f:9.0f} d  "
+                 f"TOF={sum(info['tofs']):7.0f} d ({sum(info['tofs']) / 365.25:5.1f} yr)  "
+                 f"DSM={info['dsm_total']:7.0f} m/s")
     results.sort(key=lambda r: r[0])
-    print(f"\n[scan] top {cfg.scan_keep} by objective:")
+    slog.inf(f"\n[scan] top {cfg.scan_keep} by objective:")
     for f, t, x, info in results[:cfg.scan_keep]:
-        print(f"  t0={pk.epoch(t).to_datetime().date()}  TOF={sum(info['tofs']):.0f} d "
-              f"({sum(info['tofs']) / 365.25:.2f} yr)  DSM={info['dsm_total']:.0f} m/s")
+        slog.inf(f"  t0={pk.epoch(t).to_datetime().date()}  TOF={sum(info['tofs']):.0f} d "
+                 f"({sum(info['tofs']) / 365.25:.2f} yr)  DSM={info['dsm_total']:.0f} m/s")
     return results[:cfg.scan_keep]
 
 
 def phase_refine_mp(executor, cfg, cands):
-    """[2/6] 细化: 各窗口 sade 的 runs 并行; 局部级联串行; multistart 种子并行."""
+    """细化: 各窗口 sade 的 runs 并行; 局部级联串行; multistart 种子并行."""
     gen = 60 if cfg.smoke else 600
     pop = 12 if cfg.smoke else 40
     runs = 1 if cfg.smoke else 3
@@ -94,12 +96,12 @@ def phase_refine_mp(executor, cfg, cands):
         tof_n = narrow_tof_box(x0, cfg, pct=0.15)
         sb = sade_best.get(rank)
         if sb is None:
-            print(f"  window #{rank + 1}: sade all failed, skip", flush=True)
+            slog.wrn(f"  window #{rank + 1}: sade all failed, skip")
             continue
         f, x = sb
         udp = _build_udp("tof", cfg, [t0c - 15.0, t0c + 15.0], tof_n, None, None)
-        print(f"\n[2/6 refine] window #{rank + 1} t0~{pk.epoch(t0c).to_datetime().date()} "
-              f"sade(gen={gen},pop={pop}) x{runs}", flush=True)
+        slog.inf(f"\n[refine] window #{rank + 1} t0~{pk.epoch(t0c).to_datetime().date()} "
+                 f"sade(gen={gen},pop={pop}) x{runs}")
         for loc in ("sbplx", "compass", "xnes"):
             try:
                 fl, xl = local_refine(udp, x, loc)
@@ -113,22 +115,22 @@ def phase_refine_mp(executor, cfg, cands):
         if res is not None and res[0] < f:
             f, x = res
         info = decode(x, udp.udp)
-        print(f"  -> TOF={sum(info['tofs']):.0f} d ({sum(info['tofs']) / 365.25:.2f} yr)  "
-              f"DSM={info['dsm_total']:.0f} m/s", flush=True)
+        slog.inf(f"  -> TOF={sum(info['tofs']):.0f} d ({sum(info['tofs']) / 365.25:.2f} yr)  "
+                 f"DSM={info['dsm_total']:.0f} m/s")
         if best_overall is None or f < best_overall[0]:
             best_overall = (f, x, info, udp)
     return best_overall
 
 
 def phase_ballistic_seed_mp(executor, cfg, x_ref):
-    """[3/6] 弹道播种: 在参考窗口内最小化 DSM, 得到低 DSM 种子解 (并行)."""
+    """弹道播种: 在参考窗口内最小化 DSM, 得到低 DSM 种子解 (并行)."""
     t0c = float(x_ref[0])
     tof_n = narrow_tof_box(x_ref, cfg, pct=0.15)
     gen = 60 if cfg.smoke else 500
     pop = 12 if cfg.smoke else 40
     runs = 1 if cfg.smoke else 3
-    print(f"\n[3/6 ballistic seed] DSM-min at t0~{pk.epoch(t0c).to_datetime().date()} "
-          f"sade(gen={gen},pop={pop}) x{runs} [parallel]", flush=True)
+    slog.inf(f"\n[ballistic seed] DSM-min at t0~{pk.epoch(t0c).to_datetime().date()} "
+             f"sade(gen={gen},pop={pop}) x{runs} [parallel]")
     futs = [executor.submit(_run_sade_task, "dsm", cfg, [t0c - 10.0, t0c + 10.0], tof_n,
                             None, None, gen, pop, rr) for rr in range(runs)]
     f, x = None, None
@@ -137,7 +139,7 @@ def phase_ballistic_seed_mp(executor, cfg, x_ref):
         if ff < 1e12 and (f is None or ff < f):
             f, x = ff, xx
     if f is None:
-        print("  [seed] sade all failed, use x_ref", flush=True)
+        slog.wrn("  [seed] sade all failed, use x_ref")
         f, x = 0.0, list(x_ref)
     res = multistart_mp(executor, "dsm", cfg, [t0c - 10.0, t0c + 10.0], tof_n,
                         None, None, x, n_seeds=50, maxeval=2000, seed=3)
@@ -145,8 +147,8 @@ def phase_ballistic_seed_mp(executor, cfg, x_ref):
         f, x = res
     udp = DSM_UDP(cfg, t0=[t0c - 10.0, t0c + 10.0], tof=tof_n)
     info = decode(x, udp.udp)
-    print(f"  -> DSM={info['dsm_total']:.0f} m/s  TOF={sum(info['tofs']):.0f} d "
-          f"({sum(info['tofs']) / 365.25:.2f} yr)", flush=True)
+    slog.inf(f"  -> DSM={info['dsm_total']:.0f} m/s  TOF={sum(info['tofs']):.0f} d "
+             f"({sum(info['tofs']) / 365.25:.2f} yr)")
     return x
 
 
@@ -167,8 +169,8 @@ def compress_pass_mp(executor, cfg, seed_x, tag, j_tof, w1, w2, smoke=None,
     p = 12 if smoke else pop
     r = 1 if smoke else runs
     ns = 10 if smoke else nseeds
-    print(f"\n[{tag}] from TOF={sum(tofs_cur):.0f} d, last-leg box {j_tof}, "
-          f"penalty({w1},{w2}), sade(gen={g},pop={p}) x{r} [parallel]", flush=True)
+    slog.inf(f"\n[{tag}] from TOF={sum(tofs_cur):.0f} d, last-leg box {j_tof}, "
+             f"penalty({w1},{w2}), sade(gen={g},pop={p}) x{r} [parallel]")
     futs = [executor.submit(_run_sade_task, "tof", cfg, [t0c - 8.0, t0c + 8.0], tof_n,
                             w1, w2, g, p, 700 + rr) for rr in range(r)]
     f, x = None, None
@@ -177,7 +179,7 @@ def compress_pass_mp(executor, cfg, seed_x, tag, j_tof, w1, w2, smoke=None,
         if ff < 1e12 and (f is None or ff < f):
             f, x = ff, xx
     if f is None:
-        print("  [compress] sade all failed, use seed", flush=True)
+        slog.wrn("  [compress] sade all failed, use seed")
         f, x = 0.0, list(seed_x)
     # 3 轮链式 multistart (轮次串行保持与串行版相同语义; 轮内种子并行)
     for s in range(3):
@@ -194,8 +196,8 @@ def compress_pass_mp(executor, cfg, seed_x, tag, j_tof, w1, w2, smoke=None,
         except Exception:
             pass
     info = decode(x, udp2.udp)
-    print(f"  -> TOF={sum(info['tofs']):.0f} d ({sum(info['tofs']) / 365.25:.2f} yr)  "
-          f"DSM={info['dsm_total']:.0f} m/s", flush=True)
+    slog.inf(f"  -> TOF={sum(info['tofs']):.0f} d ({sum(info['tofs']) / 365.25:.2f} yr)  "
+             f"DSM={info['dsm_total']:.0f} m/s")
     return x
 
 

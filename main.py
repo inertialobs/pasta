@@ -37,6 +37,7 @@ import argparse
 import json
 import multiprocessing
 import os
+import platform
 import socket
 import sys
 import threading
@@ -44,6 +45,7 @@ import time
 import webbrowser
 from pathlib import Path
 
+from orbcalc import slog
 from orbcalc.sysconfig import SysConfig, load_sysconfig, save_sysconfig
 
 LOCK_FILE = "orbitcalculator.lock.json"
@@ -109,13 +111,25 @@ def main():
 
     host, port = syscfg.host, syscfg.port
 
-    # 0.0.0.0 安全警告: 仅限安全内网, 无鉴权
+    # 统一日志 (写 console, UTF-8)
+    for _s in (sys.stdout, sys.stderr):
+        try:
+            _s.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+    slog.setup(stream=sys.stdout, debug=False)
+    slog.inf(f"[env] PASTA web | ver={__version__} | pid={os.getpid()} | "
+             f"py={platform.python_version()} | os={platform.platform()} | cpu={os.cpu_count()}")
+    slog.inf(f"[net] host={host} port={port} is_lan={syscfg.is_lan} "
+             f"single_instance={syscfg.single_instance} browser={not args.no_browser}")
+
+    # 0.0.0.0 安全警告
     if syscfg.is_lan and syscfg.show_lan_warning:
-        print("[warn] 监听 0.0.0.0: 局域网内任何设备可访问, 且本工具无鉴权 — 仅限安全内网使用!")
+        slog.wrn("监听 0.0.0.0: 局域网内任何设备可访问, 且本工具无鉴权 — 仅限安全内网使用!")
 
     import pykep
     import pygmo
-    print(f"pykep {pykep.__version__}  pygmo {pygmo.__version__}")
+    slog.inf(f"[env] pykep {pykep.__version__}  pygmo {pygmo.__version__}")
 
     from webapp.app import app
     if args.jobs:
@@ -126,7 +140,7 @@ def main():
     if syscfg.port == 0:
         # 随机空闲端口 (无单实例语义)
         port = find_free_port(8765)
-        print(f"[main] 随机端口: {port}")
+        slog.inf(f"[main] 随机端口: {port}")
     else:
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -142,13 +156,13 @@ def main():
                         url = lock_json.get("url", url)
                 except Exception:
                     pass
-                print(f"[main] 端口 {port} 已被实例占用, 打开已有实例: {url}")
+                slog.inf(f"[main] 端口 {port} 已被实例占用, 打开已有实例: {url}")
                 webbrowser.open(url)
                 sys.exit(0)
             raise SystemExit(f"[main] 端口 {port} 绑定失败且未启用单实例, 请换端口 (--port)")
 
     url = f"http://127.0.0.1:{port}/"
-    print(f"[main] orbitcalculator Web: {url}")
+    slog.inf(f"[main] PASTA Web: {url}")
     _write_lock(host, port)
 
     thread = threading.Thread(
@@ -165,7 +179,7 @@ def main():
         while True:
             time.sleep(3600)
     except KeyboardInterrupt:
-        print("\n[main] stopped")
+        slog.inf("[main] stopped")
 
 
 if __name__ == "__main__":

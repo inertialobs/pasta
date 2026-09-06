@@ -11,3 +11,4 @@ runs/
 presets/
 
 *.lock.json
+PLAN.md
