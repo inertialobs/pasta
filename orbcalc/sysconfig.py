@@ -3,7 +3,7 @@
 SysConfig — 全局系统配置 (区别于每任务的 TrajConfig)。
 
 管理服务监听地址、端口、单实例等**系统级**参数, 持久化到 JSON 文件
-(可执行文件/工作目录旁优先, 回退 %APPDATA%), 提供 load/save 函数。
+, 提供 load/save 函数。
 
 字段:
 - host: 监听地址 (默认 127.0.0.1; 0.0.0.0 允许局域网访问, 需安全内网)
@@ -32,17 +32,9 @@ def _base_dir():
 
 
 def sysconfig_path(preferred=None):
-    """返回 SysConfig 文件路径: 显式 > 程序目录 > %APPDATA%."""
+    """返回 SysConfig 文件路径: 显式 > 程序目录"""
     if preferred:
         return preferred
-    p = os.path.join(_base_dir(), SYS_FILE)
-    if os.path.exists(p):
-        return p
-    appdata = os.environ.get("APPDATA")
-    if appdata:
-        p2 = os.path.join(appdata, "orbitcalculator", SYS_FILE)
-        if os.path.exists(p2):
-            return p2
     return os.path.join(_base_dir(), SYS_FILE)
 
 

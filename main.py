@@ -1,18 +1,28 @@
 # -*- coding: utf-8 -*-
+    #Copyright (C) 2026  Inertial
+
+    #This program is free software: you can redistribute it and/or modify
+    # it under the terms of the GNU General Public License as published by
+    # the Free Software Foundation, either version 3 of the License, or
+    # (at your option) any later version.
+
+    # This program is distributed in the hope that it will be useful,
+    # but WITHOUT ANY WARRANTY; without even the implied warranty of
+    # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    # GNU General Public License for more details.
+
+    # You should have received a copy of the GNU General Public License
+    # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
-orbitcalculator 启动器:
 
     python main.py [--host 127.0.0.1] [--port 8765] [--jobs 8] [--no-browser]
-
-启动 Flask 服务, 自动打开用户默认浏览器,
-浏览器中完成"配置 -> 计算 -> 可视化"闭环 (无需写任何 Python 脚本)。
 
 单实例 (默认):
     固定端口 bind 即权威 —— bind 失败说明已有实例在运行,
     直接打开已有实例的前端并退出 (不启动第二个服务)。
 
 系统配置 (SysConfig):
-    启动前先读取 orbitcalculator.sys.json (程序目录/工作目录旁, 回退 %APPDATA%),
+    启动前先读取 orbitcalculator.sys.json (程序目录/工作目录旁),
     命令行参数优先于文件; 文件内可设 host=0.0.0.0 (局域网, 附安全警告) 等。
 
 端口策略:
@@ -40,15 +50,9 @@ LOCK_FILE = "orbitcalculator.lock.json"
 
 
 def _lock_path() -> Path:
-    """锁文件路径: 程序目录旁优先, 回退 %APPDATA%/orbitcalculator/."""
+    """锁文件路径"""
     base = Path(os.path.dirname(os.path.abspath(sys.argv[0] or ".")))
-    p = base / LOCK_FILE
-    if os.access(str(base), os.W_OK):
-        return p
-    appdata = os.environ.get("APPDATA")
-    if appdata:
-        return Path(appdata) / "orbitcalculator" / LOCK_FILE
-    return p
+    return base / LOCK_FILE
 
 
 def find_free_port(start: int, tries: int = 11) -> int:
@@ -88,7 +92,7 @@ def main():
         from orbcalc.run_cli import main as cli_main
         sys.exit(cli_main())
 
-    ap = argparse.ArgumentParser(description="orbitcalculator Web 启动器")
+    ap = argparse.ArgumentParser(description=f"PASTA Web Launcher {__version__}")
     ap.add_argument("--host", default=None, help="监听地址 (默认取系统配置 127.0.0.1; 0.0.0.0=局域网, 仅限安全内网)")
     ap.add_argument("--port", type=int, default=None, help="端口 (默认取系统配置 8765; 0=随机空闲端口, 禁用单实例)")
     ap.add_argument("--jobs", type=int, default=None, help="默认并行进程数 (可被任务配置覆盖; 缺省用配置值)")
@@ -129,7 +133,7 @@ def main():
                 s.bind((host, port))
         except OSError:
             if syscfg.single_instance:
-                # 已有实例在运行: 直接打开其前端并退出 (锁文件仅辅助)
+                # 已有实例在运行: 直接打开其前端并退出
                 url = f"http://127.0.0.1:{port}/"
                 try:
                     lock = _lock_path()
@@ -165,7 +169,5 @@ def main():
 
 
 if __name__ == "__main__":
-    # PyInstaller 冻结版必需: multiprocessing 池的 spawn 子进程以 pasta.exe 入口重新执行,
-    # 必须由 freeze_support() 拦截并转入 spawn_main, 否则 worker 会进主流程崩溃 (BrokenProcessPool)。
     multiprocessing.freeze_support()
     main()
