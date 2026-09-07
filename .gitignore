@@ -1,14 +1,15 @@
 .venv/
 .git/
 .vscode/
+.python-version
+
+__pycache__/
 build/
 dist/
 temp/
 test*
-__pycache__/
-# 运行时/用户数据 (不入库)
+
 runs/
 presets/
-
 *.lock.json
 PLAN.md
