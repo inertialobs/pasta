@@ -229,11 +229,11 @@ def preset_evvejs_cassini():
     cfg.seq = ["EARTH", "VENUS", "VENUS", "EARTH", "JUPITER", "SATURN"]
     cfg.eras = [["1997-01-01", "1997-12-31"]]
     cfg.tof_bounds = [
-        [170.0, 220.0],    # Earth -> Venus1  (Cassini ~193 d)
-        [40.0, 90.0],      # Venus1 -> Venus2 (Cassini ~59 d)
-        [40.0, 90.0],      # Venus2 -> Earth2 (Cassini ~55 d)
-        [450.0, 700.0],    # Earth2 -> Jupiter (Cassini ~500 d)
-        [1100.0, 1500.0],  # Jupiter -> Saturn (Cassini ~1300 d)
+        [170.0, 220.0],    # Earth -> Venus1  (Cassini 1997-10-15→1998-04-26, ~193 d)
+        [400.0, 450.0],    # Venus1 -> Venus2 (Cassini 1998-04-26→1999-06-24, ~424 d)
+        [40.0, 90.0],      # Venus2 -> Earth2 (Cassini 1999-06-24→1999-08-18, ~55 d)
+        [450.0, 700.0],    # Earth2 -> Jupiter (Cassini 1999-08-18→2000-12-30, ~500 d)
+        [1100.0, 1500.0],  # Jupiter -> Saturn (Cassini 2000-12-30→2004-07-01, ~1279 d)
     ]
     cfg.warm_x = None
     return cfg
