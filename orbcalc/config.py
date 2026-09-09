@@ -40,16 +40,6 @@ DEFAULT_ERAS = [
 ]
 DEFAULT_ERA_STEP_D = 60.0           # None → smoke?90 : 60 (与脚本一致)
 
-# 内置热启动 (2026-08 已知最优: TOF=9.86 yr, DSM=750.0 m/s, 金星≥200km)
-#   [t0, u, v, Vinf, eta1, T1, beta, rp, eta2, T2, beta, rp, eta3, T3,
-#    beta, rp, eta4, T4, beta, rp, eta5, T5]
-DEFAULT_WARM_X = [
-    6790.673916, 0.741830, 0.596849, 4577.372480, 0.012963, 199.956541,
-    -1.841368, 1.788768, 0.406503, 397.483336, -1.430037, 1.078390,
-    0.180811, 58.108399, -1.201086, 2.544347, 0.605277, 643.699581,
-    4.722208, 6.692400, 0.010289, 2303.322223,
-]
-
 # 行星安全半径覆盖 (m); 缺省看 planets.DEFAULT_SAFE_RADIUS
 DEFAULT_SAFE_RADIUS = None           # 键: 行星 TAG -> 半径 m
 
@@ -87,7 +77,6 @@ class TrajConfig:
     smoke: bool = False
     scan_keep: int = 8    # 扫描阶段保留的窗口数 (与脚本硬编码 8 一致)
     refine_keep: int = 6  # 细化阶段处理的候选窗口数 (与脚本硬编码 6 一致)
-    warm_x: list | None = field(default_factory=lambda: list(DEFAULT_WARM_X))
     run_scan: bool = True             # [1] 窗口粗扫 (含 [2] 细化, 与脚本耦合)
     run_seed: bool = True             # [3] 弹道播种 (smoke 时脚本自动跳过)
     run_compress: bool = True         # [4] 宽 TOF 压缩 (种子解 ±25% 盒)
@@ -161,14 +150,7 @@ class TrajConfig:
                     raise ValueError(
                         f"era {label} 超出 de440s 星历范围 (1849-2150): {s}")
             if e[0] > e[1]:
-                raise ValueError(f"era start > end, 实际 {e}")
-        # direct 编码: 4 (发射) + 2n (每腿 eta,T) + 2(n-1) (每飞掠 beta,rp) = 4n+2
-        if self.warm_x is not None:
-            if not all(_num(v) for v in self.warm_x):
-                raise ValueError("warm_x 应为数值向量")
-            if len(self.warm_x) != 4 * n_legs + 2:
-                raise ValueError(
-                    f"warm_x 长度应为 {4 * n_legs + 2} ({n_legs} 腿 direct 编码), 实际 {len(self.warm_x)}")
+                raise ValueError(f"era start > end, 实际: {e}")
         return True
 
     # ------------------------------------------------------------------
@@ -219,12 +201,12 @@ def sanitize_name(name):
 # 内置任务预设: 只含任务设置 (计算参数已独立为计算预设)
 # ---------------------------------------------------------------------------
 def preset_evveju():
-    """EVVEJU: Earth→Venus→Venus→Earth→Jupiter→Uranus (默认, 含内置热启动)."""
+    """EVVEJU: Earth→Venus→Venus→Earth→Jupiter→Uranus (默认)."""
     return TrajConfig(name="EVVEJU")
 
 
 def preset_evvejs_cassini():
-    """Cassini 号 (1997-10 发射): E→V→V→E→J→Saturn, 实测飞行 ~6.7 yr (无内置热启动)."""
+    """Cassini 号 (1997-10 发射): E→V→V→E→J→Saturn, 实测飞行 ~6.7 yr."""
     cfg = TrajConfig(name="EVVEJS Cassini 1997-10")
     cfg.seq = ["EARTH", "VENUS", "VENUS", "EARTH", "JUPITER", "SATURN"]
     cfg.eras = [["1997-01-01", "1997-12-31"]]
@@ -235,11 +217,10 @@ def preset_evvejs_cassini():
         [450.0, 700.0],    # Earth2 -> Jupiter (Cassini 1999-08-18→2000-12-30, ~500 d)
         [1100.0, 1500.0],  # Jupiter -> Saturn (Cassini 2000-12-30→2004-07-01, ~1279 d)
     ]
-    cfg.warm_x = None
     return cfg
 
 
 PRESETS = {
-    "EVVEJU (默认, 含热启动)": preset_evveju,
+    "EVVEJU (默认)": preset_evveju,
     "EVVEJS 卡西尼号 (1997-10)": preset_evvejs_cassini,
 }

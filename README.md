@@ -17,7 +17,6 @@ The name stands for *Parallel Astrodynamic Solver for Trajectory Analysis* — c
 
 - **Configuration as script**：a single web page completes "configure → compute → visualize"; the generated config is itself a reproducible full task script (JSON).
 - **Six-stage parallel pipeline**：`scan → refine → ballistic seed → wide J→U compress → tight-frontier compress → pick best`；each stage independently toggleable (computation presets).
-- **Built-in warm start (WARM_X)**：injects a previously-found near-optimal solution as a seed, giving a second-level baseline.
 - **Fixed random seeds**：fixed seeds + pinned numeric library versions → bit-identical reproducibility (same config, same result on repeated runs).
 - **Task / computation presets separated**：task presets hold only mission settings; computation presets hold only engine settings; both customizable and exportable to `presets/`.
 - **3D visualization**：Plotly 3D trajectory + static PNG + structured `result.json`.
@@ -62,7 +61,7 @@ pyinstaller build.spec           # output dist\pasta\pasta.exe (onedir)
 ## Usage
 
 1. **Mission config**：task name on its own row；planet-sequence nodes addable/removable；per-leg TOF bounds；objective & constraints (min_tof / min_dsm / custom weights, DSM limit, launch/arrival v∞, eta, rp upper bound, frontier penalty)；launch windows addable/removable (multiple epochs).
-2. **Computation config**：4 pipeline stage toggles, smoke/full mode, worker count, search step, scan/refine keep counts, warm-start toggle.
+2. **Computation config**：4 pipeline stage toggles, smoke/full mode, worker count, search step, scan/refine keep counts.
 3. **Submit** → automatically queued (at most 1 running job; the rest queue).
 4. **Result card**：total TOF / total DSM / C3, per-leg details (flyby rp, DSM location), 3D plot + static image.
 5. **Job management**：running / queued / cancel / delete；closing the tab keeps the job running in the background；top-right「⏹」stops the backend.
@@ -87,15 +86,14 @@ Browser (Flask web UI)
 
 | Task Preset | Description |
 |---|---|
-| EVVEJU (default, with warm start) | E→V→V→E→J→Uranus，era 2029-2033 + 2017-2021 |
+| EVVEJU (default) | E→V→V→E→J→Uranus，era 2029-2033 + 2017-2021 |
 | EVVEJS Cassini (1997-10) | E→V→V→E→J→Saturn (the real Cassini sequence), era 1997, TOF from actual legs |
 
 | Computation Preset | Description |
 |---|---|
 | Default full pipeline (8 workers) | complete 6 stages |
 | Quick smoke | reduced parameters, minute-level validation |
-| Scan + refine only | seed/compress off |
-| Evaluate WARM only (seconds) | evaluate the built-in warm-start solution only, seconds-level result/image | -->
+| Scan + refine only | seed/compress off | -->
 
 ## Layout
 

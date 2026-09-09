@@ -6,8 +6,8 @@
 
 行为与 temp/EVVEJU_TOF_1DSM_mp.py 主流程逐位一致 (cfg 驱动):
     [1] 扫描 -> [2] 细化 (run_scan)   | [3] 弹道播种 (run_seed, smoke 自动跳过)
-    [w] 内置热启动 (warm_x 非空)      | [4] 宽 TOF 压缩 (run_compress)
-    [5] 紧 TOF 压缩 (run_frontier)    | [6] pick_best -> 报告/汇总/绘图数据
+    [4] 宽 TOF 压缩 (run_compress)   | [5] 紧 TOF 压缩 (run_frontier)
+    [6] pick_best -> 报告/汇总/绘图数据
 
 日志: 统一走 orbcalc.slog (单写入者, [时间戳][级别] 标签+上下文)。
     绑定到 sys.stdout (web 子进程被 JobManager 重定向到 log.txt)。
@@ -62,7 +62,7 @@ def _dump_env(cfg):
              f"refine_keep={cfg.refine_keep} | era_step_d={cfg.era_step_d}")
     slog.inf(f"[env] run: scan={cfg.run_scan} seed={cfg.run_seed} compress={cfg.run_compress} "
              f"frontier={cfg.run_frontier}")
-    slog.inf(f"[env] warm_x={'yes' if cfg.warm_x is not None else 'no'} | penalty={cfg.penalty} | "
+    slog.inf(f"[env] penalty={cfg.penalty} | "
              f"frontier_penalty={cfg.frontier_penalty} | eta_bounds={cfg.eta_bounds}")
 
 
@@ -108,16 +108,6 @@ def run(args):
                     x_seed = phase_ballistic_seed_mp(ex, cfg, x_ref)
                     candidates.append((x_seed, DSM_UDP(cfg, t0=[x_seed[0] - 30, x_seed[0] + 30])))
 
-            if cfg.warm_x is not None:
-                try:
-                    uw = TOF_UDP(cfg, t0=[cfg.warm_x[0] - 30, cfg.warm_x[0] + 30])
-                    iw = decode(cfg.warm_x, uw.udp)
-                    slog.inf(f"[warm] 内置热启动: TOF={sum(iw['tofs']):.0f} d "
-                             f"({sum(iw['tofs']) / 365.25:.2f} yr)  DSM={iw['dsm_total']:.0f} m/s")
-                    candidates.append((cfg.warm_x, uw))
-                except Exception as e:
-                    slog.wrn(f"[warm] skipped: {e}")
-
             if (cfg.run_compress or cfg.run_frontier) and candidates:
                 def _key(item):
                     info = decode(item[0], item[1].udp)
@@ -151,7 +141,6 @@ def run(args):
         bi, bx, budp = pick_best(cfg, candidates)
         title = f"*** BEST {cfg.name} SOLUTION ***"
         slog.inf("\n" + report(bi, cfg, title) + "\n")
-        summary["warm_used"] = cfg.warm_x is not None
         _write_artifacts(args, cfg, bi, bx, summary, t_start)
         slog.inf(f"[main] done in {time.time() - t_start:.1f} s")
         return 0

@@ -34,7 +34,7 @@ const PLANETS = {
 /* ---------- 状态 ---------- */
 const state = {
   jobs: [], activeJobId: null, pollTimer: null, plotlyReady: false,
-  seq: [], warm_x: null, busy: false,
+  seq: [], busy: false,
 };
 
 /* ============================================================
@@ -81,16 +81,13 @@ function fillTrajForm(cfg) {
   $("cfgEtaL").value = (cfg.eta_bounds || [0.01, 0.9])[0];
   $("cfgEtaH").value = (cfg.eta_bounds || [0.01, 0.9])[1];
   $("cfgRpUb").value = cfg.rp_ub;
-  state.warm_x = cfg.warm_x ? [...cfg.warm_x] : null;
-  $("cfgWarm").checked = !!cfg.warm_x;
   buildSeqEditor(cfg.seq || ["EARTH", "VENUS", "VENUS", "EARTH", "JUPITER", "URANUS"]);
   buildEraTable(cfg.eras);
   updateConfigJson();
   // 载入反馈
   $("trajPresetMsg").textContent =
     `已载入任务预设「${cfg.name || "?"}」: ` +
-    `${(cfg.seq || []).join("→")} · 目标 ${cfg.objective || "min_tof"}` +
-    (cfg.warm_x ? " · 含热启动" : " · 无热启动");
+    `${(cfg.seq || []).join("→")} · 目标 ${cfg.objective || "min_tof"}`;
 }
 
 function fillCompForm(cfg) {
@@ -237,7 +234,6 @@ function buildEraTable(eras) {
 function collectConfig() {
   const rows = [...document.querySelectorAll("#seqNodes .node-row")];
   const seq = rows.map(r => r.querySelector('select[data-k="tag"]').value);
-  const nLegs = seq.length - 1;
   const tofB = [];
   document.querySelectorAll("#tofTable input").forEach(inp => {
     const leg = +inp.dataset.leg, k = inp.dataset.k;
@@ -267,7 +263,6 @@ function collectConfig() {
     era_step_d: +$("cfgEraStep").value,          // 搜索步进 (天)
     jobs: +$("cfgJobs").value,
     smoke: $("cfgSmoke").checked,
-    warm_x: null,
     run_scan: $("cfgRunScan").checked,
     run_seed: $("cfgRunSeed").checked,
     run_compress: $("cfgRunCompress").checked,
@@ -275,9 +270,6 @@ function collectConfig() {
     scan_keep: +$("cfgScanKeep").value,
     refine_keep: +$("cfgRefineKeep").value,
   };
-  if ($("cfgWarm").checked && state.warm_x && state.warm_x.length === 4 * nLegs + 2) {
-    obj.warm_x = state.warm_x;
-  }
   return obj;
 }
 
@@ -418,7 +410,7 @@ function updateConfigJson() {
   catch (e) { $("cfgJsonBox").value = "配置错误: " + e.message; }
 }
 ["cfgName", "cfgDsmLimit", "cfgVinfL", "cfgVinfH",
- "cfgEtaL", "cfgEtaH", "cfgRpUb", "cfgJobs", "cfgSmoke", "cfgWarm",
+ "cfgEtaL", "cfgEtaH", "cfgRpUb", "cfgJobs", "cfgSmoke",
  "cfgRunScan", "cfgRunSeed", "cfgRunCompress", "cfgRunFrontier",
  "cfgScanKeep", "cfgRefineKeep", "cfgEraStep", "cfgWToF", "cfgWDsm",
  "cfgPenL1", "cfgPenL2", "cfgFPenL1", "cfgFPenL2"]

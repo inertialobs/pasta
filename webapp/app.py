@@ -350,7 +350,7 @@ class JobManager:
 TRAJ_FIELDS = {"name", "seq", "safe_radius", "tof_bounds", "vinf_bounds_kmps",
                "eta_bounds", "rp_ub", "eras", "objective",
                "objective_weights", "dsm_limit_ms", "penalty", "frontier_penalty",
-               "wl", "vinf_launch_limit_ms", "wa", "vinf_arrival_limit_ms", "warm_x"}
+               "wl", "vinf_launch_limit_ms", "wa", "vinf_arrival_limit_ms"}
 COMP_FIELDS = {"name", "run_scan", "run_seed", "run_compress", "run_frontier",
                "scan_keep", "refine_keep", "jobs", "smoke", "era_step_d"}  # 搜索步进(天)归计算配置
 
@@ -365,13 +365,10 @@ def _builtin_comp_presets() -> dict:
     smoke = dict(full); smoke["smoke"] = True
     scan_refine = dict(full); scan_refine["run_seed"] = False
     scan_refine["run_compress"] = False; scan_refine["run_frontier"] = False
-    ev = dict(full); ev["run_scan"] = False; ev["run_seed"] = False
-    ev["run_compress"] = False; ev["run_frontier"] = False
     return {
         "默认全流水线 (8 进程)": full,
         "冒烟快速 (smoke)": smoke,
         "仅扫描+细化": scan_refine,
-        "仅评估 WARM (秒级)": ev,
     }
 
 
