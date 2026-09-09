@@ -50,12 +50,21 @@ def local_refine(udp, x, algo_name="sbplx", iters=2000):
     if algo_name in ("sbplx", "cobyla"):
         a = make_nlopt(algo_name, maxeval=iters)
     elif algo_name == "compass":
-        a = pg.algorithm(pg.compass_search(max_fevals=iters, start_range=0.1,
-                                           seed=20240801))
+        # compass_search 无 seed 参数 (确定性算法, 起点由 x0 给定)
+        a = pg.algorithm(pg.compass_search(max_fevals=iters, start_range=0.1))
     else:
+        # xnes 需 >=4 个体: 以 x0 为中心小扰动播种, 保持局部精化语义
         a = pg.algorithm(pg.xnes(gen=200, seed=20240801))
-    pop = pg.population(prob, size=1)
-    pop.set_x(0, x0)
+        rng = np.random.default_rng(20240801)
+        span = np.maximum(np.array(ub) - np.array(lb), 1e-12)
+        width = 0.02 * np.abs(x0) + 1e-6 * span
+        pop = pg.population(prob, size=0)
+        pop.push_back(x0)
+        for _ in range(4):
+            pop.push_back(np.clip(np.array(x0) + rng.uniform(-width, width), lb, ub))
+    if algo_name != "xnes":
+        pop = pg.population(prob, size=1)
+        pop.set_x(0, x0)
     pop = a.evolve(pop)
     return pop.champion_f[0], list(pop.champion_x)
 
