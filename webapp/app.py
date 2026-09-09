@@ -27,7 +27,7 @@ from pathlib import Path
 from flask import Flask, jsonify, render_template, request, send_from_directory
 
 from orbcalc import slog
-from orbcalc.config import TrajConfig, PRESETS, sanitize_name
+from orbcalc.config import TrajConfig, sanitize_name
 from orbcalc.sysconfig import SysConfig, load_sysconfig, save_sysconfig, sysconfig_path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -40,7 +40,8 @@ else:
     RESOURCE_ROOT = PROJECT_ROOT
 
 RUNS_DIR = PROJECT_ROOT / "runs"
-PRESETS_DIR = PROJECT_ROOT / "presets"
+PRESETS_DIR = PROJECT_ROOT / "presets"          # 用户预设 (可写)
+BUILTIN_PRESETS_DIR = RESOURCE_ROOT / "presets"  # 内置预设 (只读, 随包分发)
 for _d in (RUNS_DIR, PRESETS_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
@@ -359,36 +360,36 @@ def _subdict(d: dict, fields: set) -> dict:
     return {k: v for k, v in d.items() if k in fields}
 
 
-def _builtin_comp_presets() -> dict:
-    """内置计算配置预设 (流水线开关/保留个数/进程数/冒烟)."""
-    full = _subdict(TrajConfig().to_dict(), COMP_FIELDS)          # 默认全流水线
-    smoke = dict(full); smoke["smoke"] = True
-    scan_refine = dict(full); scan_refine["run_seed"] = False
-    scan_refine["run_compress"] = False; scan_refine["run_frontier"] = False
-    return {
-        "默认全流水线 (8 进程)": full,
-        "冒烟快速 (smoke)": smoke,
-        "仅扫描+细化": scan_refine,
-    }
-
-
-def load_custom_presets() -> tuple[dict, dict]:
-    """从 presets/*.json 载入用户预设: 返回 (traj 视图, comp 视图).
+def _load_preset_dir(dirpath: Path, traj: dict, comp: dict) -> None:
+    """扫描目录里的预设 JSON 并按 kind 分组 (就地更新 traj/comp).
 
     - comp_*.json -> 计算配置视图
     - 其他 (含旧格式完整配置) -> 任务配置视图 (取轨迹字段子集)
+    - JSON 里可选 "title" 字段作显示名 (TrajConfig 会忽略未知字段); 缺省用 name
+    """
+    if not dirpath.is_dir():
+        return
+    for f in sorted(dirpath.glob("*.json")):
+        try:
+            raw = json.loads(f.read_text(encoding="utf-8"))
+            cfg = TrajConfig.from_dict(raw)
+        except Exception:
+            continue  # 损坏的预设文件跳过
+        title = raw.get("title") or cfg.name
+        if f.name.startswith("comp_"):
+            comp[title] = _subdict(cfg.to_dict(), COMP_FIELDS)
+        else:
+            traj[title] = _subdict(cfg.to_dict(), TRAJ_FIELDS)
+
+
+def load_presets() -> tuple[dict, dict]:
+    """载入预设: 返回 (traj 视图, comp 视图).
+
+    依次扫描 [内置目录, 用户目录], 同名时用户预设覆盖内置 (可改内置预设)。
     """
     traj, comp = {}, {}
-    if PRESETS_DIR.exists():
-        for f in sorted(PRESETS_DIR.glob("*.json")):
-            try:
-                cfg = TrajConfig.from_json(path=str(f))
-            except Exception:
-                continue  # 损坏的预设文件跳过
-            if f.name.startswith("comp_"):
-                comp[cfg.name] = _subdict(cfg.to_dict(), COMP_FIELDS)
-            else:
-                traj[cfg.name] = _subdict(cfg.to_dict(), TRAJ_FIELDS)
+    _load_preset_dir(BUILTIN_PRESETS_DIR, traj, comp)
+    _load_preset_dir(PRESETS_DIR, traj, comp)
     return traj, comp
 
 
@@ -464,12 +465,7 @@ def create_app() -> Flask:
     @app.get("/api/presets")
     def presets():
         """分组返回: {\"traj\": {...}, \"comp\": {...}}"""
-        traj = {name: _subdict(fn().to_dict(), TRAJ_FIELDS)
-                for name, fn in PRESETS.items()}
-        comp = _builtin_comp_presets()
-        ctraj, ccomp = load_custom_presets()
-        traj.update(ctraj)
-        comp.update(ccomp)
+        traj, comp = load_presets()
         return jsonify({"traj": traj, "comp": comp})
 
     @app.post("/api/presets")

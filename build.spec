@@ -57,11 +57,13 @@ _here = SPECPATH if 'SPECPATH' in globals() else os.getcwd()
 datas += [
     (os.path.join(_here, 'webapp/templates'),     'webapp/templates'),
     (os.path.join(_here, 'webapp/static'),        'webapp/static'),
+    (os.path.join(_here, 'presets'),              'presets'),
     (os.path.join(_here, 'licenses'),             'licenses'),
     (os.path.join(_here, 'LICENSE'),              '.'),
     (os.path.join(_here, 'ThirdPartyNotice.md'),  '.'),
 ]
-# 运行时目录: 冻结版 exe 首次启动时自动创建 (JobManager/预设)
+# 运行时目录: 冻结版 exe 首次启动时自动创建 (JobManager/用户预设);
+# 内置预设 presets/ 已随包打进 _MEIPASS (只读), 用户预设写在 exe 旁的 presets/。
 
 # ---- VC runtime: 打进 _internal 顶层, 目标机无需安装 VC++ Redistributable ----
 sys32 = os.path.join(os.environ.get('SystemRoot', r'C:\Windows'), 'System32')

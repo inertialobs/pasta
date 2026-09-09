@@ -1,0 +1,6 @@
+{
+  "name": "仅扫描+细化",
+  "run_seed": false,
+  "run_compress": false,
+  "run_frontier": false
+}

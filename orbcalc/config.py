@@ -195,32 +195,3 @@ def sanitize_name(name):
     """任务名 -> 安全目录名."""
     s = re.sub(r"[^\w\-]+", "_", name).strip("_") or "job"
     return s[:40]
-
-
-# ---------------------------------------------------------------------------
-# 内置任务预设: 只含任务设置 (计算参数已独立为计算预设)
-# ---------------------------------------------------------------------------
-def preset_evveju():
-    """EVVEJU: Earth→Venus→Venus→Earth→Jupiter→Uranus (默认)."""
-    return TrajConfig(name="EVVEJU")
-
-
-def preset_evvejs_cassini():
-    """Cassini 号 (1997-10 发射): E→V→V→E→J→Saturn, 实测飞行 ~6.7 yr."""
-    cfg = TrajConfig(name="EVVEJS Cassini 1997-10")
-    cfg.seq = ["EARTH", "VENUS", "VENUS", "EARTH", "JUPITER", "SATURN"]
-    cfg.eras = [["1997-01-01", "1997-12-31"]]
-    cfg.tof_bounds = [
-        [170.0, 220.0],    # Earth -> Venus1  (Cassini 1997-10-15→1998-04-26, ~193 d)
-        [400.0, 450.0],    # Venus1 -> Venus2 (Cassini 1998-04-26→1999-06-24, ~424 d)
-        [40.0, 90.0],      # Venus2 -> Earth2 (Cassini 1999-06-24→1999-08-18, ~55 d)
-        [450.0, 700.0],    # Earth2 -> Jupiter (Cassini 1999-08-18→2000-12-30, ~500 d)
-        [1100.0, 1500.0],  # Jupiter -> Saturn (Cassini 2000-12-30→2004-07-01, ~1279 d)
-    ]
-    return cfg
-
-
-PRESETS = {
-    "EVVEJU (默认)": preset_evveju,
-    "EVVEJS 卡西尼号 (1997-10)": preset_evvejs_cassini,
-}
