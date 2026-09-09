@@ -6,7 +6,7 @@
     [1] 扫描      : 每个发射窗口一轮 sade -> 并行任务
     [2] 细化      : 各窗口 sade runs 并行; 局部级联串行; multistart 种子并行
     [3] 弹道播种  : DSM-最小化 -> 低 DSM 种子
-    [4/5] 压缩    : 宽/紧 J->U 盒 + 默认/强罚 (sade runs 与 multistart 并行)
+    [4/5] 压缩    : 宽/紧 TOF 盒 + 默认/强罚 (sade runs 与 multistart 并行)
     [6] 汇总      : pick_best (TOF 最小且 DSM<=limit; 否则目标最小)
 """
 from __future__ import annotations
@@ -152,24 +152,22 @@ def phase_ballistic_seed_mp(executor, cfg, x_ref):
     return x
 
 
-def compress_pass_mp(executor, cfg, seed_x, tag, j_tof, w1, w2, smoke=None,
-                     gen=800, pop=48, runs=3, nseeds=60):
-    """[4/5] 从种子解出发压 TOF: 宽/紧 J->U 盒 + 强/默认罚 (sade runs 与 multistart 并行)."""
+def compress_pass_mp(executor, cfg, seed_x, tag, w1, w2, smoke=None,
+                     gen=800, pop=48, runs=3, nseeds=60, pct=0.25):
+    """[4/5] 从种子解出发压 TOF: 各腿 TOF 收窄到种子值 ±pct (不越全局边界)
+    + 强/默认罚 (sade runs 与 multistart 并行). 宽压缩用大 pct, 紧压缩用小 pct."""
     if smoke is None:
         smoke = cfg.smoke
     t0c = float(seed_x[0])
     tofs_cur = [float(seed_x[5 + 4 * i]) for i in range(len(cfg.seq) - 1)]
     tof_n = []
-    for i, ((lo, hi), t) in enumerate(zip(cfg.tof_bounds, tofs_cur)):
-        if i == len(cfg.seq) - 2:           # 末腿 = J->U 盒 (或用户指定腿)
-            tof_n.append([float(a) for a in j_tof])
-        else:
-            tof_n.append([max(lo, t * 0.95), min(hi, t * 1.05)])
+    for (lo, hi), t in zip(cfg.tof_bounds, tofs_cur):
+        tof_n.append([max(float(lo), t * (1 - pct)), min(float(hi), t * (1 + pct))])
     g = 60 if smoke else gen
     p = 12 if smoke else pop
     r = 1 if smoke else runs
     ns = 10 if smoke else nseeds
-    slog.inf(f"\n[{tag}] from TOF={sum(tofs_cur):.0f} d, last-leg box {j_tof}, "
+    slog.inf(f"\n[{tag}] from TOF={sum(tofs_cur):.0f} d, TOF box ±{pct:.0%}, "
              f"penalty({w1},{w2}), sade(gen={g},pop={p}) x{r} [parallel]")
     futs = [executor.submit(_run_sade_task, "tof", cfg, [t0c - 8.0, t0c + 8.0], tof_n,
                             w1, w2, g, p, 700 + rr) for rr in range(r)]

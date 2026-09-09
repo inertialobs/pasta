@@ -90,8 +90,8 @@ class TrajConfig:
     warm_x: list | None = field(default_factory=lambda: list(DEFAULT_WARM_X))
     run_scan: bool = True             # [1] 窗口粗扫 (含 [2] 细化, 与脚本耦合)
     run_seed: bool = True             # [3] 弹道播种 (smoke 时脚本自动跳过)
-    run_compress: bool = True         # [4] 宽 J->U 压缩
-    run_frontier: bool = True         # [5] 紧 J->U 前沿压缩
+    run_compress: bool = True         # [4] 宽 TOF 压缩 (种子解 ±25% 盒)
+    run_frontier: bool = True         # [5] 紧 TOF 压缩 (种子解 ±12% 盒, 强罚)
 
     # ------------------------------------------------------------------
     def validate(self):

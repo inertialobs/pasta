@@ -6,8 +6,8 @@
 
 行为与 temp/EVVEJU_TOF_1DSM_mp.py 主流程逐位一致 (cfg 驱动):
     [1] 扫描 -> [2] 细化 (run_scan)   | [3] 弹道播种 (run_seed, smoke 自动跳过)
-    [w] 内置热启动 (warm_x 非空)      | [4] 宽 J->U 压缩 (run_compress)
-    [5] 紧 J->U 前沿压缩 (run_frontier)| [6] pick_best -> 报告/汇总/绘图数据
+    [w] 内置热启动 (warm_x 非空)      | [4] 宽 TOF 压缩 (run_compress)
+    [5] 紧 TOF 压缩 (run_frontier)    | [6] pick_best -> 报告/汇总/绘图数据
 
 日志: 统一走 orbcalc.slog (单写入者, [时间戳][级别] 标签+上下文)。
     绑定到 sys.stdout (web 子进程被 JobManager 重定向到 log.txt)。
@@ -129,15 +129,16 @@ def run(args):
                     slog.inf("[phase] [4/6] wide compress")
                     for k, (sx, sudp) in enumerate(seeds):
                         xw = compress_pass_mp(ex, cfg, sx, f"4/6 compress wide #{k + 1}",
-                                              [2500, 4300], cfg.penalty[0], cfg.penalty[1],
-                                              smoke=cfg.smoke)
+                                              cfg.penalty[0], cfg.penalty[1],
+                                              smoke=cfg.smoke, pct=0.25)
                         candidates.append((xw, TOF_UDP(cfg, t0=[sx[0] - 30, sx[0] + 30])))
                 if cfg.run_frontier:
                     slog.inf("[phase] [5/6] frontier tight compress")
                     bi, bx, budp = pick_best(cfg, candidates)
                     xf = compress_pass_mp(ex, cfg, bx, "5/6 frontier tight",
-                                          [2200, 2900], cfg.frontier_penalty[0],
-                                          cfg.frontier_penalty[1], smoke=cfg.smoke)
+                                          cfg.frontier_penalty[0],
+                                          cfg.frontier_penalty[1], smoke=cfg.smoke,
+                                          pct=0.12)
                     candidates.append((xf, TOF_UDP(cfg, t0=[xf[0] - 30, xf[0] + 30])))
 
         if not candidates:
