@@ -134,8 +134,16 @@ class JobManager:
 
     def _maybe_next(self) -> None:
         with self._lock:
-            if self._active is None and self._queue:
-                nxt = self._queue.pop(0)
+            if self._active is not None:
+                return
+            # 跳过已取消的排队项 (防御: 正常应在 cancel 时出队)
+            nxt = None
+            while self._queue:
+                cand = self._queue.pop(0)
+                if not self._jobs[cand].get("cancelled"):
+                    nxt = cand
+                    break
+            if nxt is not None:
                 self._active = nxt
                 self._jobs[nxt]["status"] = "starting"
                 self._start(nxt)
@@ -161,14 +169,21 @@ class JobManager:
         rc = proc.poll()
         if rc is None:
             return
-        # 任务已结束: 关闭日志句柄 (之后不再 flush/close)
+        # 任务已结束: 关闭日志句柄 (之后不再 flush/close; get/supervise 并发
+        # 进入时句柄可能已被对方关闭, 容错跳过即可)
         log_f = job.get("log_f")
         if log_f is not None:
-            log_f.flush()
-            log_f.close()
             job["log_f"] = None
+            try:
+                log_f.flush()
+                log_f.close()
+            except Exception:
+                pass
         result_path = Path(job["dir"]) / "result.json"
-        if rc == 0 and result_path.exists():
+        if job.get("cancelled"):
+            # cancel 打的标志优先: taskkill /F 退出码非 130, 不能只看 rc
+            job["status"] = "cancelled"
+        elif rc == 0 and result_path.exists():
             job["status"] = "done"
         elif rc == 130:
             job["status"] = "cancelled"
@@ -290,6 +305,13 @@ class JobManager:
         proc = job.get("proc")
         if proc is not None and proc.poll() is None:
             _kill_tree(proc.pid)   # 整树杀: 连同 multiprocessing 池 workers, 防孤儿
+        job["cancelled"] = True   # _poll 据此判 cancelled (taskkill 退出码非 130)
+        with self._lock:
+            # 排队中: 必须出队, 否则 _maybe_next 仍会把它拉起
+            if jid in self._queue:
+                self._queue.remove(jid)
+            if self._active == jid and (proc is None or proc.poll() is not None):
+                self._active = None
         job["status"] = "cancelled"
         try:
             (Path(job["dir"]) / "cancelled.txt").touch()
