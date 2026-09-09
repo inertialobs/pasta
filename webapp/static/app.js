@@ -34,7 +34,7 @@ const PLANETS = {
 /* ---------- 状态 ---------- */
 const state = {
   jobs: [], activeJobId: null, pollTimer: null, plotlyReady: false,
-  seq: [], busy: false,
+  seq: [], pendingTofBounds: null, busy: false,
 };
 
 /* ============================================================
@@ -81,7 +81,8 @@ function fillTrajForm(cfg) {
   $("cfgEtaL").value = (cfg.eta_bounds || [0.01, 0.9])[0];
   $("cfgEtaH").value = (cfg.eta_bounds || [0.01, 0.9])[1];
   $("cfgRpUb").value = cfg.rp_ub;
-  buildSeqEditor(cfg.seq || ["EARTH", "VENUS", "VENUS", "EARTH", "JUPITER", "URANUS"]);
+  buildSeqEditor(cfg.seq || ["EARTH", "VENUS", "VENUS", "EARTH", "JUPITER", "URANUS"],
+                 cfg.tof_bounds);
   buildEraTable(cfg.eras);
   updateConfigJson();
   // 载入反馈
@@ -111,8 +112,9 @@ function fillCompForm(cfg) {
 }
 
 /* ---------- 序列节点编辑器 ---------- */
-function buildSeqEditor(seq) {
+function buildSeqEditor(seq, tofBounds) {
   state.seq = [...seq];
+  state.pendingTofBounds = Array.isArray(tofBounds) ? tofBounds : null;
   const wrap = $("seqNodes");
   wrap.innerHTML = "";
   seq.forEach((tag, i) => {
@@ -192,8 +194,13 @@ function buildTofTable(nLegs) {
   tbl.innerHTML = "<tr><th>腿</th><th>区间</th><th>最小 (d)</th><th>最大 (d)</th></tr>";
   let lastCfg = {};
   try { lastCfg = JSON.parse($("cfgJsonBox").value || "{}") || {}; } catch (e) { lastCfg = {}; }
-  const arr = (lastCfg.tof_bounds && lastCfg.tof_bounds.length === nLegs)
-    ? lastCfg.tof_bounds : defaultTofBounds(nLegs);
+  // 优先级: 预设载入带来的 tof_bounds > 上次表单值 (节点增删时保留编辑) > 默认值
+  const pend = state.pendingTofBounds;
+  const arr = (pend && pend.length === nLegs)
+    ? pend
+    : (lastCfg.tof_bounds && lastCfg.tof_bounds.length === nLegs)
+      ? lastCfg.tof_bounds : defaultTofBounds(nLegs);
+  state.pendingTofBounds = null;   // 只消费一次, 后续节点增删走 lastCfg 回退
   const seq = state.seq;
   for (let i = 0; i < nLegs; i++) {
     const [lo, hi] = arr[i] || [60, 5000];
