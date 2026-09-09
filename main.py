@@ -34,6 +34,7 @@ from _version import __version__
 import bootstrap
 
 import argparse
+import io
 import json
 import multiprocessing
 import os
@@ -114,7 +115,8 @@ def main():
     # 统一日志 (写 console, UTF-8)
     for _s in (sys.stdout, sys.stderr):
         try:
-            _s.reconfigure(encoding="utf-8", errors="replace")
+            if isinstance(_s, io.TextIOWrapper):
+                _s.reconfigure(encoding="utf-8", errors="replace")
         except Exception:
             pass
     slog.setup(stream=sys.stdout, debug=False)
