@@ -15,13 +15,11 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import signal
 import subprocess
 import sys
 import threading
 import time
-import webbrowser
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request, send_from_directory
@@ -29,15 +27,17 @@ from flask import Flask, jsonify, render_template, request, send_from_directory
 from orbcalc import slog
 from orbcalc.config import TrajConfig, sanitize_name
 from orbcalc.computecfg import ComputeConfig, computecfg_path, load_computecfg, save_computecfg
-from orbcalc.sysconfig import SysConfig, load_sysconfig, save_sysconfig, sysconfig_path
+from orbcalc.sysconfig import load_sysconfig, lock_path, save_sysconfig, sysconfig_path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-
-# PyInstaller 冻结时: webapp 资源 (templates/static) 在 _MEIPASS 解包根;
-# runs/presets 仍是用户数据目录, 用项目根 (冻结后 exe 所在目录旁)。
+# PyInstaller 冻结时:
+#   * 资源 (templates/static/内置 presets) 在 _MEIPASS 解包根;
+#   * 用户数据 (runs/presets) 与 exe 同目录 —— __file__ 在冻结环境指向
+#     _MEIPASS, 不能用它定位用户数据目录。
 if getattr(sys, "frozen", False):
+    PROJECT_ROOT = Path(sys.executable).resolve().parent
     RESOURCE_ROOT = Path(getattr(sys, "_MEIPASS", PROJECT_ROOT))
 else:
+    PROJECT_ROOT = Path(__file__).resolve().parent.parent
     RESOURCE_ROOT = PROJECT_ROOT
 
 RUNS_DIR = PROJECT_ROOT / "runs"
@@ -51,11 +51,18 @@ CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
 def _kill_tree(pid: int) -> None:
     """整棵进程树终止 (含 multiprocessing 池 workers 等子进程).
-    Windows 用 taskkill /T /F; 其他平台 SIGTERM 到进程组."""
+    Windows 用 taskkill /T /F; 其他平台向子进程组发 SIGTERM
+    (子进程以 start_new_session=True 启动, 故其 pgid == pid)。"""
     if os.name == "nt":
         try:
             subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
                            capture_output=True, timeout=10)
+            return
+        except Exception:
+            pass
+    else:
+        try:
+            os.killpg(pid, signal.SIGTERM)
             return
         except Exception:
             pass
@@ -86,13 +93,19 @@ class JobManager:
         if jobs_override and jobs_override > 0:
             cfg.jobs = int(jobs_override)
         cfg.validate()
-        jid = time.strftime("%Y%m%d_%H%M%S") + "_" + sanitize_name(cfg.name)
-        d = self.runs_dir / jid
-        d.mkdir(parents=True, exist_ok=True)
-        cfg.to_json(str(d / "config.json"))
-        with open(d / "request.json", "w", encoding="utf-8") as f:
-            json.dump(config_dict, f, ensure_ascii=False, indent=2)
         with self._lock:
+            # 同秒同名也要唯一: 目录已存在/内存已有则追加序号 (加锁内完成, 防并发)
+            base = time.strftime("%Y%m%d_%H%M%S") + "_" + sanitize_name(cfg.name)
+            jid = base
+            n = 2
+            while jid in self._jobs or (self.runs_dir / jid).exists():
+                jid = f"{base}_{n}"
+                n += 1
+            d = self.runs_dir / jid
+            d.mkdir(parents=True, exist_ok=True)
+            cfg.to_json(str(d / "config.json"))
+            with open(d / "request.json", "w", encoding="utf-8") as f:
+                json.dump(config_dict, f, ensure_ascii=False, indent=2)
             self._jobs[jid] = {
                 "job_id": jid,
                 "name": cfg.name,
@@ -113,6 +126,12 @@ class JobManager:
         d = Path(job["dir"])
         job["status"] = "running"
         job["started"] = time.time()
+        stale = d / "cancelled.txt"
+        if stale.exists():
+            try:
+                stale.unlink()   # 清掉复用目录时的旧取消标志
+            except OSError:
+                pass
         log_f = open(d / "log.txt", "a", encoding="utf-8", buffering=1)
         log_f.write(f"=== job {jid} started {time.time():.0f} ===\n")
         if getattr(sys, "frozen", False):
@@ -131,6 +150,7 @@ class JobManager:
             cmd, cwd=str(PROJECT_ROOT),
             stdout=log_f, stderr=log_f,
             creationflags=CREATE_NO_WINDOW,
+            start_new_session=(os.name != "nt"),   # POSIX: 独立进程组, 便于整树杀
         )
         slog.inf(f"[job] start jid={jid} cmd={' '.join(cmd)}")
 
@@ -164,7 +184,9 @@ class JobManager:
 
     # ------------------------------------------------------------------
     def _poll(self, jid: str) -> None:
-        job = self._jobs[jid]
+        job = self._jobs.get(jid)
+        if job is None or job.get("finished") is not None:
+            return   # 已处理过终结状态, 不再重复 poll/改 elapsed/写日志
         proc = job.get("proc")
         if proc is None:
             return
@@ -182,11 +204,12 @@ class JobManager:
             except Exception:
                 pass
         result_path = Path(job["dir"]) / "result.json"
-        if job.get("cancelled"):
+        if rc == 0 and result_path.exists():
+            # 成功优先于 cancelled 标志: cancel 可能在进程收尾后才到达
+            job["status"] = "done"
+        elif job.get("cancelled"):
             # cancel 打的标志优先: taskkill /F 退出码非 130, 不能只看 rc
             job["status"] = "cancelled"
-        elif rc == 0 and result_path.exists():
-            job["status"] = "done"
         elif rc == 130:
             job["status"] = "cancelled"
         else:
@@ -212,10 +235,20 @@ class JobManager:
 
     @staticmethod
     def _disk_status(d: Path) -> str:
+        # result.json 的 status 字段最权威; cancelled.txt 仅在无结果时作依据
+        rf = d / "result.json"
+        if rf.exists():
+            try:
+                st = json.loads(rf.read_text(encoding="utf-8")).get("status")
+            except Exception:
+                return "failed"   # 结果文件损坏/只写了一半
+            if st == "cancelled":
+                return "cancelled"
+            if st == "error":
+                return "failed"
+            return "done"
         if (d / "cancelled.txt").exists():
             return "cancelled"
-        if (d / "result.json").exists():
-            return "done"
         return "failed"
 
     def _info_from_disk(self, jid: str) -> dict | None:
@@ -304,8 +337,16 @@ class JobManager:
             job = self._jobs.get(jid)
         if job is None:
             return False
+        if job.get("status") in ("done", "failed", "cancelled"):
+            return True   # 已终结: 不改写状态, 也不写 cancelled.txt
         proc = job.get("proc")
-        if proc is not None and proc.poll() is None:
+        running = proc is not None and proc.poll() is None
+        if not running and (Path(job["dir"]) / "result.json").exists():
+            # 进程已退出且成功产出结果: 视为成功, 不标 cancelled
+            job["status"] = "done"
+            job["finished"] = job.get("finished") or time.time()
+            return True
+        if running:
             _kill_tree(proc.pid)   # 整树杀: 连同 multiprocessing 池 workers, 防孤儿
         job["cancelled"] = True   # _poll 据此判 cancelled (taskkill 退出码非 130)
         with self._lock:
@@ -321,6 +362,17 @@ class JobManager:
             pass
         slog.inf(f"[job] cancel jid={jid}")
         return True
+
+    def cancel_pending_or_running(self) -> None:
+        """仅取消未终结的任务 (shutdown 用; 已 done/failed/cancelled 的历史不动)."""
+        with self._lock:
+            ids = [j for j, job in self._jobs.items()
+                   if job.get("status") in ("running", "starting", "queued")]
+        for jid in ids:
+            try:
+                self.cancel(jid)
+            except Exception:
+                pass
 
     def delete(self, jid: str) -> bool:
         """从列表与磁盘彻底删除任务 (运行中先终止, 排队中移除).
@@ -438,20 +490,14 @@ def create_app() -> Flask:
 
     @app.post("/api/shutdown")
     def shutdown():
-        """优雅退出后端: 终止活跃任务 -> 删锁文件 -> 退出进程."""
+        """优雅退出后端: 终止未完成任务 -> 删锁文件 -> 退出进程."""
         slog.inf("[web] shutdown 请求: 取消活跃任务并退出")
         try:
-            if jm._active:
-                jm.cancel(jm._active)
+            jm.cancel_pending_or_running()
         except Exception:
             pass
         try:
-            for jid in list(jm._jobs):
-                jm.cancel(jid)
-        except Exception:
-            pass
-        try:
-            lock = PROJECT_ROOT / "orbitcalculator.lock.json"
+            lock = Path(lock_path())
             if lock.exists():
                 lock.unlink()
         except Exception:

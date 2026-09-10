@@ -22,6 +22,7 @@ from dataclasses import dataclass, asdict
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 SYS_FILE = "orbitcalculator.sys.json"
+LOCK_FILE = "orbitcalculator.lock.json"
 
 
 def _base_dir():
@@ -36,6 +37,18 @@ def sysconfig_path(preferred=None):
     if preferred:
         return preferred
     return os.path.join(_base_dir(), SYS_FILE)
+
+
+def lock_path():
+    """单实例信息锁文件路径 (写入/删除必须共用本函数).
+
+    冻结版 = exe 所在目录; 源码运行 = 入口脚本所在目录。
+    """
+    if getattr(sys, "frozen", False):
+        base = os.path.dirname(sys.executable)
+    else:
+        base = os.path.dirname(os.path.abspath(sys.argv[0] or "."))
+    return os.path.join(base, LOCK_FILE)
 
 
 @dataclass

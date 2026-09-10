@@ -39,7 +39,7 @@ from .udp import TOF_UDP, DSM_UDP
 from .decode_report import decode, report, summarize
 from .plot_data import build_plot_json, render_png
 from .stages import (phase_scan_mp, phase_refine_mp, phase_ballistic_seed_mp,
-                     compress_pass_mp, pick_best)
+                     compress_pass_mp, pick_best, select_key)
 from . import slog
 
 
@@ -100,6 +100,7 @@ def run(args):
                     slog.err("[main] refine failed (all windows sade failed)")
                     summary["status"] = "error"
                     summary["error"] = "refine failed (all windows sade failed)"
+                    _write_result(args, summary)
                     return 2
                 f_ref, x_ref, info_ref, udp_ref = best_ref
                 candidates.append((x_ref, udp_ref))
@@ -111,8 +112,7 @@ def run(args):
             if (cfg.run_compress or cfg.run_frontier) and candidates:
                 def _key(item):
                     info = decode(item[0], item[1].udp)
-                    return (0 if info["dsm_total"] <= cfg.dsm_limit_ms else 1,
-                            sum(info["tofs"]))
+                    return select_key(cfg, info)
                 candidates.sort(key=_key)
                 seeds = candidates[:2]
                 if cfg.run_compress:

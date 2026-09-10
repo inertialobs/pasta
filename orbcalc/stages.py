@@ -199,18 +199,31 @@ def compress_pass_mp(executor, cfg, seed_x, tag, w1, w2, smoke=None,
     return x
 
 
+def select_key(cfg, info):
+    """最终选解键 (与 cfg.objective 对齐): (DSM 超限惩罚, 主目标, 总 TOF).
+
+    - min_tof : 可行解中 TOF 最小 (与原行为一致)
+    - min_dsm : 可行解中总 DSM 最小
+    - custom  : 可行解中 w_tof*TOF + w_dsm*DSM 最小
+    """
+    tof = float(sum(info["tofs"]))
+    dsm = float(info["dsm_total"])
+    feasible = 0 if dsm <= cfg.dsm_limit_ms else 1
+    if cfg.objective == "min_dsm":
+        return (feasible, dsm, tof)
+    if cfg.objective == "custom":
+        w = cfg.objective_weights
+        return (feasible, float(w[0]) * tof + float(w[1]) * dsm, tof)
+    return (feasible, tof, 0.0)
+
+
 def pick_best(cfg, candidates):
-    """候选池中选 TOF 最小且 DSM <= limit 的解; 无可行解则取目标最小."""
+    """候选池中按 cfg.objective 选优 (DSM 超限的候选整体劣后)."""
     best = None
+    best_key = None
     for x, udp in candidates:
         info = decode(x, udp.udp)
-        if best is None:
-            best = (info, x, udp)
-            continue
-        bi = best[0]
-        if info["dsm_total"] <= cfg.dsm_limit_ms and bi["dsm_total"] > cfg.dsm_limit_ms:
-            best = (info, x, udp)
-        elif (info["dsm_total"] <= cfg.dsm_limit_ms) == (bi["dsm_total"] <= cfg.dsm_limit_ms):
-            if sum(info["tofs"]) < sum(bi["tofs"]):
-                best = (info, x, udp)
+        key = select_key(cfg, info)
+        if best_key is None or key < best_key:
+            best, best_key = (info, x, udp), key
     return best

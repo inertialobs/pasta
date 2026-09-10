@@ -73,28 +73,27 @@ def build_plot_json(cfg, info):
     bodies = []
     seen = {}
     for idx, tag in enumerate(seq):
-        if tag in seen:
-            bodies[seen[tag]]["encounters"].append(
-                {"iso": str(pk.epoch(epochs[idx]).to_datetime()),
-                 "x": None, "y": None, "z": None})
-            continue
         pla = get_planet(tag)
-        if tag in _INNER:
-            arc = _one_period(pla, t_mid, PERIOD.get(tag, 365.25), N=360)
-        else:
-            span = max(epochs[-1] - epochs[0], 30.0)
-            arc = _arc_points(pla, epochs[0], epochs[-1], N=max(120, int(span / 40.0)))
-        # 交会点 (该位置时刻的行星坐标)
+        # 交会点 (每次出现都算坐标, 重复天体不再置 None)
         try:
             r, _ = pla.eph(pk.epoch(epochs[idx]))
             ex, ey, ez = float(r[0] / pk.AU), float(r[1] / pk.AU), float(r[2] / pk.AU)
         except Exception:
             ex = ey = ez = None
+        encounter = {"iso": str(pk.epoch(epochs[idx]).to_datetime()),
+                     "x": ex, "y": ey, "z": ez}
+        if tag in seen:
+            bodies[seen[tag]]["encounters"].append(encounter)
+            continue
+        if tag in _INNER:
+            arc = _one_period(pla, t_mid, PERIOD.get(tag, 365.25), N=360)
+        else:
+            span = max(epochs[-1] - epochs[0], 30.0)
+            arc = _arc_points(pla, epochs[0], epochs[-1], N=max(120, int(span / 40.0)))
         bodies.append({
             "tag": tag, "color": BODY_COLOR.get(tag, "gray"),
             "orbit": arc,
-            "encounters": [{"iso": str(pk.epoch(epochs[idx]).to_datetime()),
-                            "x": ex, "y": ey, "z": ez}],
+            "encounters": [encounter],
         })
         seen[tag] = len(bodies) - 1
 

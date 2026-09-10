@@ -47,15 +47,12 @@ import webbrowser
 from pathlib import Path
 
 from orbcalc import slog
-from orbcalc.sysconfig import SysConfig, load_sysconfig, save_sysconfig
-
-LOCK_FILE = "orbitcalculator.lock.json"
+from orbcalc.sysconfig import load_sysconfig, lock_path
 
 
 def _lock_path() -> Path:
-    """锁文件路径"""
-    base = Path(os.path.dirname(os.path.abspath(sys.argv[0] or ".")))
-    return base / LOCK_FILE
+    """锁文件路径 (与 webapp shutdown 共用 sysconfig.lock_path)"""
+    return Path(lock_path())
 
 
 def find_free_port(start: int, tries: int = 11) -> int:

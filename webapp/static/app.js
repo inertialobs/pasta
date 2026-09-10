@@ -141,6 +141,7 @@ function planetOptions(sel) {
 /* 重新计算角色/设置 (行星变化或增删移后) */
 function refreshSeqRoles() {
   const rows = [...document.querySelectorAll("#seqNodes .node-row")];
+  state.seq = rows.map(r => r.querySelector('select[data-k="tag"]').value);
   rows.forEach((row, i) => {
     const role = i === 0 ? "depart" : (i === rows.length - 1 ? "arrive" : "flyby");
     row.className = "node-row " + role;
@@ -315,12 +316,7 @@ $("seqNodes").addEventListener("click", (e) => {
 });
 
 $("seqNodes").addEventListener("change", (e) => {
-  if (e.target.matches('select[data-k="tag"]')) {
-    const row = e.target.closest(".node-row");
-    const safe = PLANETS[e.target.value] ? PLANETS[e.target.value].note : "";
-    const s = row.querySelector(".node-safe");
-    if (s) s.textContent = safe;
-  }
+  if (e.target.matches('select[data-k="tag"]')) refreshSeqRoles();
   updateConfigJson();
 });
 $("seqNodes").addEventListener("input", () => updateConfigJson());
