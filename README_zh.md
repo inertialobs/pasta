@@ -86,7 +86,7 @@ pyinstaller build.spec       # 产物 dist\pasta\pasta.exe
 |---|---|
 | EVVEJU（默认） | E→V→V→E→J→Uranus，era 2029-2033 + 2017-2021 |
 | EVVEJS 卡西尼号（1997-10） | E→V→V→E→J→Saturn卡西尼号真实序列，era 1997，TOF 按实测行程 |
-
+-->
 ## 目录结构
 
 ```
