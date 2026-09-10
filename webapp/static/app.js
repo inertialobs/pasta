@@ -95,7 +95,6 @@ function fillCompForm(cfg) {
   $("cfgRunSeed").checked = cfg.run_seed !== false;
   $("cfgRunCompress").checked = cfg.run_compress !== false;
   $("cfgRunFrontier").checked = cfg.run_frontier !== false;
-  $("cfgSmoke").checked = !!cfg.smoke;
   $("cfgJobs").value = cfg.jobs || 4;
   $("cfgScanKeep").value = cfg.scan_keep || 8;
   $("cfgRefineKeep").value = cfg.refine_keep || 6;
@@ -262,7 +261,6 @@ function collectConfig() {
     eras,
     era_step_d: +$("cfgEraStep").value,          // 搜索步进 (天)
     jobs: +$("cfgJobs").value,
-    smoke: $("cfgSmoke").checked,
     run_scan: $("cfgRunScan").checked,
     run_seed: $("cfgRunSeed").checked,
     run_compress: $("cfgRunCompress").checked,
@@ -390,7 +388,7 @@ function updateConfigJson() {
   catch (e) { $("cfgJsonBox").value = "配置错误: " + e.message; }
 }
 ["cfgName", "cfgDsmLimit", "cfgVinfL", "cfgVinfH",
- "cfgEtaL", "cfgEtaH", "cfgRpUb", "cfgJobs", "cfgSmoke",
+ "cfgEtaL", "cfgEtaH", "cfgRpUb", "cfgJobs",
  "cfgRunScan", "cfgRunSeed", "cfgRunCompress", "cfgRunFrontier",
  "cfgScanKeep", "cfgRefineKeep", "cfgEraStep", "cfgWToF", "cfgWDsm",
  "cfgPenL1", "cfgPenL2", "cfgFPenL1", "cfgFPenL2"]
@@ -689,7 +687,6 @@ async function loadSysConfig() {
     const s = await jfetch("/api/sysconfig");
     $("sysLan").checked = (s.host === "0.0.0.0" || s.host === "::");
     $("sysPort").value = s.port;
-    $("sysSingle").checked = !!s.single_instance;
     $("sysOpenBrowser").checked = !!s.open_browser;
     const bw = $("sysLanWarnBanner");
     if (bw) bw.classList.toggle("hidden", !$("sysLan").checked);
@@ -712,9 +709,7 @@ $("sysSave").addEventListener("click", async () => {
       body: JSON.stringify({
         host: lan ? "0.0.0.0" : "127.0.0.1",
         port: +$("sysPort").value,
-        single_instance: $("sysSingle").checked,
         open_browser: $("sysOpenBrowser").checked,
-        show_lan_warning: true,
       }),
     });
     const j = await r.json();
@@ -734,11 +729,10 @@ $("sysSave").addEventListener("click", async () => {
       if (typeof Plotly !== "undefined") { state.plotlyReady = true; clearInterval(t); }
     }, 200);
   }
-  // 系统信息: host/port/单实例/0.0.0.0 警告
+  // 系统信息: host/port/0.0.0.0 警告
   try {
     const h = await jfetch("/api/health");
-    $("sysInfo").textContent = `${h.host || "127.0.0.1"}:${h.port || 8765}` +
-      (h.single_instance ? " · 单实例" : " · 多实例");
+    $("sysInfo").textContent = `${h.host || "127.0.0.1"}:${h.port || 8765}`;
     if (h.lan) { const b = $("sysLanWarnBanner"); if (b) b.classList.remove("hidden"); }
   } catch (e) { console.error(e); }
   // 一次性提示: 关标签=后台继续 (可删, 不影响脚本)

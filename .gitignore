@@ -10,8 +10,7 @@ temp/
 test*
 
 runs/
-*.lock.json
-*.compute.json
+pasta.settings.json
 PLAN.md
 
 presets/*.json

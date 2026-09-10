@@ -18,7 +18,7 @@ The name stands for *Parallel Astrodynamic Solver for Trajectory Analysis* — c
 - **Configuration as script**：a single web page completes "configure → compute → visualize"; the generated config is itself a reproducible full task script (JSON).
 - **Six-stage parallel pipeline**：`scan → refine → ballistic seed → wide J→U compress → tight-frontier compress → pick best`；each stage independently toggleable.
 - **Fixed random seeds**：fixed seeds + pinned numeric library versions → bit-identical reproducibility (same config, same result on repeated runs).
-- **Global compute config**：one single compute configuration (pipeline toggles / keep counts / workers / smoke); auto-updated on every submit and restored on restart — no per-preset engine settings.
+- **Global compute config**：one single compute configuration (pipeline toggles / keep counts / workers); auto-updated on every submit and restored on restart — no per-preset engine settings.
 - **3D visualization**：Plotly 3D trajectory + static PNG + structured `result.json`.
 
 ## Installation
@@ -61,12 +61,12 @@ pyinstaller build.spec           # output dist\pasta\pasta.exe (onedir)
 ## Usage
 
 1. **Mission config**：task name on its own row；planet-sequence nodes addable/removable；per-leg TOF bounds；objective & constraints (min_tof / min_dsm / custom weights, DSM limit, launch/arrival v∞, eta, rp upper bound, frontier penalty)；launch windows addable/removable (multiple epochs).
-2. **Computation config**：4 pipeline stage toggles, smoke/full mode, worker count, search step, scan/refine keep counts.
+2. **Computation config**：4 pipeline stage toggles, worker count, search step, scan/refine keep counts.
 3. **Submit** → automatically queued (at most 1 running job; the rest queue).
 4. **Result card**：total TOF / total DSM / C3, per-leg details (flyby rp, DSM location), 3D plot + static image.
 5. **Job management**：running / queued / cancel / delete；closing the tab keeps the job running in the background；top-right「⏹」stops the backend.
-6. **Presets**：task-preset dropdown；loading fills the mission form (with load feedback)；「save as…」exports to `presets/*.json`. The compute form is backed by a single global config (`orbitcalculator.compute.json`), auto-saved on each submit.
-7. **System settings**：port, single instance, expose to LAN, auto-open browser.
+6. **Presets**：task-preset dropdown；loading fills the mission form (with load feedback)；「save as…」exports to `presets/*.json`. The compute form is backed by a single global config (`pasta.settings.json`), auto-saved on each submit.
+7. **System settings**：port, expose to LAN, auto-open browser.
 
 ## Architecture
 
@@ -80,7 +80,7 @@ Browser (Flask web UI)
 - **Computation entry** `orbcalc/run_cli.py`：loads config → runs the 6 stages → writes artifacts; the error path releases all multiprocessing children in `finally`.
 - **Artifacts**（per-job dir `runs/<job>/`）：`config.json`、`log.txt`、`result.json`、`plot.json`、`best_x.npy`、`trajectory.png`.
 - **Config-driven**：`orbcalc/config.py` `TrajConfig` carries every task parameter (defaults aligned item-by-item with the reference script `temp/EVVEJU_TOF_1DSM_mp.py`).
-- **System config** `orbitcalculator.sys.json`：`host` / `port` / `single_instance` / `open_browser` / `show_lan_warning`；CLI flags override the file.
+- **Global settings** `pasta.settings.json`：`host` / `port` / `open_browser` + global compute config；CLI flags override the file.
 <!-- 
 ## Built-in Presets
 

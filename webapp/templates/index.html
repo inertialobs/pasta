@@ -100,7 +100,6 @@
           <label><input type="checkbox" id="cfgRunSeed" checked> 弹道播种</label>
           <label><input type="checkbox" id="cfgRunCompress" checked> 宽压缩</label>
           <label><input type="checkbox" id="cfgRunFrontier" checked> 前沿压缩</label>
-          <label><input type="checkbox" id="cfgSmoke"> 冒烟 (快速) 模式</label>
         </div>
       </fieldset>
       <fieldset>
@@ -159,10 +158,9 @@
     </div>
     <div class="field"><label>端口 port</label><input id="sysPort" type="number" value="8765" min="0" max="65535"></div>
     <div class="checks">
-      <label><input type="checkbox" id="sysSingle"> 单实例 (端口被占时直接打开已有实例)</label><br>
       <label><input type="checkbox" id="sysOpenBrowser"> 启动时自动打开浏览器</label>
     </div>
-    <p class="hint">port=0 表示随机空闲端口 (禁用单实例)。改动保存后需重启程序生效。</p>
+    <p class="hint">port=0 表示随机空闲端口。改动保存后需重启程序生效。</p>
     <div class="actions">
       <button id="sysSave" class="primary">保存</button>
       <button id="sysClose" class="ghost">取消</button>

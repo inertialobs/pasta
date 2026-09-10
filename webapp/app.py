@@ -26,8 +26,7 @@ from flask import Flask, jsonify, render_template, request, send_from_directory
 
 from orbcalc import slog
 from orbcalc.config import TrajConfig, sanitize_name
-from orbcalc.computecfg import ComputeConfig, computecfg_path, load_computecfg, save_computecfg
-from orbcalc.sysconfig import load_sysconfig, lock_path, save_sysconfig, sysconfig_path
+from settings import CONFIG_FILE, settings
 
 # PyInstaller 冻结时:
 #   * 资源 (templates/static/内置 presets) 在 _MEIPASS 解包根;
@@ -406,6 +405,11 @@ TRAJ_FIELDS = {"name", "seq", "safe_radius", "tof_bounds", "vinf_bounds_kmps",
                "objective_weights", "dsm_limit_ms", "penalty", "frontier_penalty",
                "wl", "vinf_launch_limit_ms", "wa", "vinf_arrival_limit_ms"}
 
+# 全局配置 (settings) 字段分组: 系统 / 计算
+SYS_FIELDS = {"host", "port", "open_browser"}
+COMPUTE_FIELDS = {"run_scan", "run_seed", "run_compress", "run_frontier",
+                  "scan_keep", "refine_keep", "era_step_d", "jobs"}
+
 
 def _subdict(d: dict, fields: set) -> dict:
     return {k: v for k, v in d.items() if k in fields}
@@ -447,7 +451,6 @@ def create_app() -> Flask:
                 template_folder=str(RESOURCE_ROOT / "webapp" / "templates"),
                 static_folder=str(RESOURCE_ROOT / "webapp" / "static"))
     app.config["DEFAULT_JOBS"] = None  # main.py --jobs 可设置默认并行度
-    app.config["SYS"] = load_sysconfig()   # 系统配置 (host/port/单实例)
     jm = JobManager(RUNS_DIR)
 
     # ------------------------------------------------------------------
@@ -458,48 +461,37 @@ def create_app() -> Flask:
     @app.get("/api/health")
     def health():
         import pykep
-        syscfg = app.config["SYS"]
+        host = settings["host"]
         return jsonify({"ok": True, "pykep": pykep.__version__,
                         "runs_dir": str(RUNS_DIR),
-                        "host": syscfg.host, "port": syscfg.port,
-                        "lan": syscfg.is_lan,
-                        "single_instance": syscfg.single_instance})
+                        "host": host, "port": settings["port"],
+                        "lan": host in ("0.0.0.0", "::")})
 
     @app.get("/api/sysconfig")
     def get_sysconfig():
-        syscfg = app.config["SYS"]
-        out = syscfg.to_dict()
-        out["is_lan"] = syscfg.is_lan
-        out["path"] = sysconfig_path()
+        out = {k: settings[k] for k in SYS_FIELDS}
+        out["is_lan"] = settings["host"] in ("0.0.0.0", "::")
+        out["path"] = os.path.abspath(CONFIG_FILE)
         return jsonify(out)
 
     @app.post("/api/sysconfig")
     def set_sysconfig():
-        """保存系统配置 (host/port/单实例…), 重启后生效."""
+        """保存系统配置 (host/port/浏览器…), 重启后生效."""
         body = request.get_json(force=True, silent=True) or {}
-        syscfg = app.config["SYS"]
-        new = syscfg.from_dict({**syscfg.to_dict(), **body})
         try:
-            new.validate()
+            settings.update(body)
+            settings.save_file()
         except Exception as e:
             return jsonify({"error": str(e)}), 400
-        path = save_sysconfig(new)
-        app.config["SYS"] = new
-        return jsonify({"saved": True, "path": path,
+        return jsonify({"saved": True, "path": os.path.abspath(CONFIG_FILE),
                         "restart_required": True}), 200
 
     @app.post("/api/shutdown")
     def shutdown():
-        """优雅退出后端: 终止未完成任务 -> 删锁文件 -> 退出进程."""
+        """优雅退出后端: 终止未完成任务 -> 退出进程."""
         slog.inf("[web] shutdown 请求: 取消活跃任务并退出")
         try:
             jm.cancel_pending_or_running()
-        except Exception:
-            pass
-        try:
-            lock = Path(lock_path())
-            if lock.exists():
-                lock.unlink()
         except Exception:
             pass
         threading.Timer(0.4, lambda: os._exit(0)).start()
@@ -530,9 +522,8 @@ def create_app() -> Flask:
     @app.get("/api/compcfg")
     def get_compcfg():
         """全局计算配置 (唯一一份, 前端计算表单初始值来源)."""
-        cc = load_computecfg()
-        out = cc.to_dict()
-        out["path"] = computecfg_path()
+        out = {k: settings[k] for k in COMPUTE_FIELDS}
+        out["path"] = os.path.abspath(CONFIG_FILE)
         return jsonify(out)
 
     @app.post("/api/compcfg")
@@ -540,11 +531,11 @@ def create_app() -> Flask:
         """保存全局计算配置."""
         body = request.get_json(force=True, silent=True) or {}
         try:
-            cc = ComputeConfig.from_dict(body)
+            settings.update(body)
+            settings.save_file()
         except Exception as e:
             return jsonify({"error": str(e)}), 400
-        path = save_computecfg(cc)
-        return jsonify({"saved": True, "path": path}), 200
+        return jsonify({"saved": True, "path": os.path.abspath(CONFIG_FILE)}), 200
 
     @app.post("/api/jobs")
     def create_job():
@@ -562,7 +553,8 @@ def create_app() -> Flask:
             eff = dict(cfg)
             if jobs_override and jobs_override > 0:
                 eff["jobs"] = int(jobs_override)
-            save_computecfg(ComputeConfig.from_dict(eff))
+            settings.update(eff)
+            settings.save_file()
         except Exception:
             pass  # 配置保存失败不影响任务提交
         return jsonify({"job_id": jid, "status": jm.get(jid)["status"]}), 201

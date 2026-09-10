@@ -17,17 +17,13 @@
 
     python main.py [--host 127.0.0.1] [--port 8765] [--jobs 8] [--no-browser]
 
-单实例 (默认):
-    固定端口 bind 即权威 —— bind 失败说明已有实例在运行,
-    直接打开已有实例的前端并退出 (不启动第二个服务)。
-
-系统配置 (SysConfig):
-    启动前先读取 orbitcalculator.sys.json (程序目录/工作目录旁),
-    命令行参数优先于文件; 文件内可设 host=0.0.0.0 (局域网, 附安全警告) 等。
+系统配置:
+    启动前先读取 pasta.settings.json (工作目录下), 命令行参数优先于文件;
+    文件内可设 host=0.0.0.0 (局域网, 附安全警告) 等。
 
 端口策略:
-    --port 0  -> 随机选空闲端口 (禁用单实例锁语义)
-    其他      -> 固定该端口; 被占用时若 single_instance 则直接打开已有实例
+    --port 0  -> 随机选空闲端口
+    其他      -> 固定该端口; 被占用时视为已有实例, 直接打开其前端并退出
 """
 from _version import __version__
 
@@ -35,7 +31,6 @@ import bootstrap
 
 import argparse
 import io
-import json
 import multiprocessing
 import os
 import platform
@@ -44,15 +39,9 @@ import sys
 import threading
 import time
 import webbrowser
-from pathlib import Path
 
 from orbcalc import slog
-from orbcalc.sysconfig import load_sysconfig, lock_path
-
-
-def _lock_path() -> Path:
-    """锁文件路径 (与 webapp shutdown 共用 sysconfig.lock_path)"""
-    return Path(lock_path())
+from settings import settings
 
 
 def find_free_port(start: int, tries: int = 11) -> int:
@@ -66,48 +55,19 @@ def find_free_port(start: int, tries: int = 11) -> int:
     raise RuntimeError(f"端口 {start}..{start + tries - 1} 全部被占用")
 
 
-def _write_lock(host: str, port: int) -> Path:
-    """写信息性锁文件 (不参与单实例判定, 仅调试/查端口用)."""
-    lock = _lock_path()
-    try:
-        try:
-            lock.parent.mkdir(parents=True, exist_ok=True)
-        except OSError:
-            pass
-        lock.write_text(json.dumps({
-            "host": host, "port": port,
-            "url": f"http://127.0.0.1:{port}/",
-            "pid": os.getpid(), "started": time.time(),
-        }, ensure_ascii=False, indent=2), encoding="utf-8")
-    except OSError:
-        pass
-    return lock
-
-
 def main():
-    # PyInstaller 冻结版子进程模式: pasta.exe --cli --config ... --outdir ...
     if len(sys.argv) >= 2 and sys.argv[1] == "--cli":
-        # 剥掉 --cli 标记再交给 run_cli (它的 argparse 不认 --cli)
+        # 当以子进程模式启动的时候， 剥去--cli并传入run_cli.main()
         sys.argv = [sys.argv[0]] + (sys.argv[2:] if len(sys.argv) > 2 else [])
         from orbcalc.run_cli import main as cli_main
         sys.exit(cli_main())
 
     ap = argparse.ArgumentParser(description=f"PASTA Web Launcher {__version__}")
     ap.add_argument("--host", default=None, help="监听地址 (默认取系统配置 127.0.0.1; 0.0.0.0=局域网, 仅限安全内网)")
-    ap.add_argument("--port", type=int, default=None, help="端口 (默认取系统配置 8765; 0=随机空闲端口, 禁用单实例)")
+    ap.add_argument("--port", type=int, default=None, help="端口 (默认取系统配置 8765; 0=随机空闲端口)")
     ap.add_argument("--jobs", type=int, default=None, help="默认并行进程数 (可被任务配置覆盖; 缺省用配置值)")
     ap.add_argument("--no-browser", action="store_true", help="不自动打开浏览器")
     args = ap.parse_args()
-
-    # 系统配置 (文件) -> 命令行覆盖
-    syscfg = load_sysconfig()
-    if args.host:
-        syscfg.host = args.host
-    if args.port is not None:
-        syscfg.port = args.port
-    syscfg.validate()
-
-    host, port = syscfg.host, syscfg.port
 
     # 统一日志 (写 console, UTF-8)
     for _s in (sys.stdout, sys.stderr):
@@ -119,11 +79,25 @@ def main():
     slog.setup(stream=sys.stdout, debug=False)
     slog.inf(f"[env] PASTA web | ver={__version__} | pid={os.getpid()} | "
              f"py={platform.python_version()} | os={platform.platform()} | cpu={os.cpu_count()}")
-    slog.inf(f"[net] host={host} port={port} is_lan={syscfg.is_lan} "
-             f"single_instance={syscfg.single_instance} browser={not args.no_browser}")
+
+    # 配置 (文件) -> 命令行覆盖
+    try:
+        settings.load_file()
+    except Exception as e:
+        slog.wrn(f"[settings] 读取失败, 使用默认设置: {e}")
+    if args.host:
+        settings.update({"host": args.host})
+    if args.port is not None:
+        settings.update({"port": args.port})
+    settings.validate()
+
+    host, port = settings["host"], settings["port"]
+    is_lan = host in ("0.0.0.0", "::")
+    open_browser = not args.no_browser and bool(settings["open_browser"])
+    slog.inf(f"[net] host={host} port={port} is_lan={is_lan} browser={open_browser}")
 
     # 0.0.0.0 安全警告
-    if syscfg.is_lan and syscfg.show_lan_warning:
+    if is_lan:
         slog.wrn("监听 0.0.0.0: 局域网内任何设备可访问, 且本工具无鉴权 — 仅限安全内网使用!")
 
     import pykep
@@ -133,11 +107,9 @@ def main():
     from webapp.app import app
     if args.jobs:
         app.config["DEFAULT_JOBS"] = args.jobs
-    app.config["SYS"] = syscfg
 
     # ---- 端口策略 ----
-    if syscfg.port == 0:
-        # 随机空闲端口 (无单实例语义)
+    if port == 0:
         port = find_free_port(8765)
         slog.inf(f"[main] 随机端口: {port}")
     else:
@@ -145,24 +117,14 @@ def main():
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.bind((host, port))
         except OSError:
-            if syscfg.single_instance:
-                # 已有实例在运行: 直接打开其前端并退出
-                url = f"http://127.0.0.1:{port}/"
-                try:
-                    lock = _lock_path()
-                    if lock.exists():
-                        lock_json = json.loads(lock.read_text(encoding="utf-8"))
-                        url = lock_json.get("url", url)
-                except Exception:
-                    pass
-                slog.inf(f"[main] 端口 {port} 已被实例占用, 打开已有实例: {url}")
-                webbrowser.open(url)
-                sys.exit(0)
-            raise SystemExit(f"[main] 端口 {port} 绑定失败且未启用单实例, 请换端口 (--port)")
+            # 端口已被占用 = 已有实例在运行: 直接打开其前端并退出
+            url = f"http://127.0.0.1:{port}/"
+            slog.inf(f"[main] 端口 {port} 已被实例占用, 打开已有实例: {url}")
+            webbrowser.open(url)
+            sys.exit(0)
 
     url = f"http://127.0.0.1:{port}/"
     slog.inf(f"[main] PASTA Web: {url}")
-    _write_lock(host, port)
 
     thread = threading.Thread(
         target=lambda: app.run(host=host, port=port,
@@ -171,7 +133,7 @@ def main():
     )
     thread.start()
 
-    if not args.no_browser:
+    if open_browser:
         threading.Timer(0.8, lambda: webbrowser.open(url)).start()
 
     try:
