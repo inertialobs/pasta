@@ -73,7 +73,7 @@ class TrajConfig:
     era_step_d: float | None = None   # None → smoke?90:60 (与脚本一致)
 
     # --- 并行 / 模式 ---
-    jobs: int = 8
+    jobs: int = 4
     smoke: bool = False
     scan_keep: int = 8    # 扫描阶段保留的窗口数 (与脚本硬编码 8 一致)
     refine_keep: int = 6  # 细化阶段处理的候选窗口数 (与脚本硬编码 6 一致)

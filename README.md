@@ -16,9 +16,9 @@ The name stands for *Parallel Astrodynamic Solver for Trajectory Analysis* — c
 ## Features
 
 - **Configuration as script**：a single web page completes "configure → compute → visualize"; the generated config is itself a reproducible full task script (JSON).
-- **Six-stage parallel pipeline**：`scan → refine → ballistic seed → wide J→U compress → tight-frontier compress → pick best`；each stage independently toggleable (computation presets).
+- **Six-stage parallel pipeline**：`scan → refine → ballistic seed → wide J→U compress → tight-frontier compress → pick best`；each stage independently toggleable.
 - **Fixed random seeds**：fixed seeds + pinned numeric library versions → bit-identical reproducibility (same config, same result on repeated runs).
-- **Task / computation presets separated**：task presets hold only mission settings; computation presets hold only engine settings; both customizable and exportable to `presets/`.
+- **Global compute config**：one single compute configuration (pipeline toggles / keep counts / workers / smoke); auto-updated on every submit and restored on restart — no per-preset engine settings.
 - **3D visualization**：Plotly 3D trajectory + static PNG + structured `result.json`.
 
 ## Installation
@@ -65,7 +65,7 @@ pyinstaller build.spec           # output dist\pasta\pasta.exe (onedir)
 3. **Submit** → automatically queued (at most 1 running job; the rest queue).
 4. **Result card**：total TOF / total DSM / C3, per-leg details (flyby rp, DSM location), 3D plot + static image.
 5. **Job management**：running / queued / cancel / delete；closing the tab keeps the job running in the background；top-right「⏹」stops the backend.
-6. **Presets**：task-preset + computation-preset dropdowns；loading fills the form (with load feedback)；「save as…」exports to `presets/*.json`.
+6. **Presets**：task-preset dropdown；loading fills the mission form (with load feedback)；「save as…」exports to `presets/*.json`. The compute form is backed by a single global config (`orbitcalculator.compute.json`), auto-saved on each submit.
 7. **System settings**：port, single instance, expose to LAN, auto-open browser.
 
 ## Architecture
@@ -89,12 +89,6 @@ Browser (Flask web UI)
 | EVVEJU (default) | E→V→V→E→J→Uranus，era 2029-2033 + 2017-2021 |
 | EVVEJS Cassini (1997-10) | E→V→V→E→J→Saturn (the real Cassini sequence), era 1997, TOF from actual legs |
 
-| Computation Preset | Description |
-|---|---|
-| Default full pipeline (8 workers) | complete 6 stages |
-| Quick smoke | reduced parameters, minute-level validation |
-| Scan + refine only | seed/compress off | -->
-
 ## Layout
 
 ```
@@ -103,7 +97,7 @@ build.spec              PyInstaller packaging config
 requirements(.dev).txt  run / build dependencies
 orbcalc/                engine layer (config / udp / stages / engines / run_cli / sysconfig)
 webapp/                 Flask backend + frontend (templates + static)
-presets/                user-exported presets
+presets/                built-in + user-exported task presets
 runs/<job>/             job artifacts
 ```
 

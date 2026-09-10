@@ -28,6 +28,7 @@ from flask import Flask, jsonify, render_template, request, send_from_directory
 
 from orbcalc import slog
 from orbcalc.config import TrajConfig, sanitize_name
+from orbcalc.computecfg import ComputeConfig, computecfg_path, load_computecfg, save_computecfg
 from orbcalc.sysconfig import SysConfig, load_sysconfig, save_sysconfig, sysconfig_path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -347,50 +348,46 @@ class JobManager:
         return True
 
 
-# 预设字段分组: 任务配置 (轨迹) / 计算配置 (流水线)
+# 预设字段分组: 任务配置 (轨迹)
 TRAJ_FIELDS = {"name", "seq", "safe_radius", "tof_bounds", "vinf_bounds_kmps",
                "eta_bounds", "rp_ub", "eras", "objective",
                "objective_weights", "dsm_limit_ms", "penalty", "frontier_penalty",
                "wl", "vinf_launch_limit_ms", "wa", "vinf_arrival_limit_ms"}
-COMP_FIELDS = {"name", "run_scan", "run_seed", "run_compress", "run_frontier",
-               "scan_keep", "refine_keep", "jobs", "smoke", "era_step_d"}  # 搜索步进(天)归计算配置
 
 
 def _subdict(d: dict, fields: set) -> dict:
     return {k: v for k, v in d.items() if k in fields}
 
 
-def _load_preset_dir(dirpath: Path, traj: dict, comp: dict) -> None:
-    """扫描目录里的预设 JSON 并按 kind 分组 (就地更新 traj/comp).
+def _load_preset_dir(dirpath: Path, traj: dict) -> None:
+    """扫描目录里的任务预设 JSON 并就地并入 traj.
 
-    - comp_*.json -> 计算配置视图
-    - 其他 (含旧格式完整配置) -> 任务配置视图 (取轨迹字段子集)
-    - JSON 里可选 "title" 字段作显示名 (TrajConfig 会忽略未知字段); 缺省用 name
+    - 可选 "title" 字段作显示名 (TrajConfig 会忽略未知字段); 缺省用 name
+    - comp_*.json 为已废弃的旧计算预设, 直接忽略
     """
     if not dirpath.is_dir():
         return
     for f in sorted(dirpath.glob("*.json")):
+        if f.name.startswith("comp_"):
+            continue  # 遗留计算预设 (已废弃): 计算配置现由 /api/compcfg 全局管理
         try:
             raw = json.loads(f.read_text(encoding="utf-8"))
             cfg = TrajConfig.from_dict(raw)
         except Exception:
             continue  # 损坏的预设文件跳过
         title = raw.get("title") or cfg.name
-        if f.name.startswith("comp_"):
-            comp[title] = _subdict(cfg.to_dict(), COMP_FIELDS)
-        else:
-            traj[title] = _subdict(cfg.to_dict(), TRAJ_FIELDS)
+        traj[title] = _subdict(cfg.to_dict(), TRAJ_FIELDS)
 
 
-def load_presets() -> tuple[dict, dict]:
-    """载入预设: 返回 (traj 视图, comp 视图).
+def load_presets() -> dict:
+    """载入任务预设: 返回 {显示名: 轨迹字段子集}.
 
     依次扫描 [内置目录, 用户目录], 同名时用户预设覆盖内置 (可改内置预设)。
     """
-    traj, comp = {}, {}
-    _load_preset_dir(BUILTIN_PRESETS_DIR, traj, comp)
-    _load_preset_dir(PRESETS_DIR, traj, comp)
-    return traj, comp
+    traj = {}
+    _load_preset_dir(BUILTIN_PRESETS_DIR, traj)
+    _load_preset_dir(PRESETS_DIR, traj)
+    return traj
 
 
 def create_app() -> Flask:
@@ -464,19 +461,15 @@ def create_app() -> Flask:
 
     @app.get("/api/presets")
     def presets():
-        """分组返回: {\"traj\": {...}, \"comp\": {...}}"""
-        traj, comp = load_presets()
-        return jsonify({"traj": traj, "comp": comp})
+        """任务预设: {显示名: 轨迹字段子集}"""
+        return jsonify(load_presets())
 
     @app.post("/api/presets")
     def save_preset():
-        """保存自定义预设: {name, config, kind:\"traj\"|\"comp\"} -> presets/<prefix>_<名>.json"""
+        """保存任务预设: {name, config} -> presets/traj_<名>.json"""
         body = request.get_json(force=True, silent=True) or {}
         name = str(body.get("name") or "").strip()
         cfg_dict = body.get("config")
-        kind = str(body.get("kind") or "traj").strip()
-        if kind not in ("traj", "comp"):
-            return jsonify({"error": "kind 应为 traj 或 comp"}), 400
         if not name or not isinstance(cfg_dict, dict):
             return jsonify({"error": "need name and config"}), 400
         try:
@@ -484,9 +477,28 @@ def create_app() -> Flask:
         except Exception as e:
             return jsonify({"error": str(e)}), 400
         cfg.name = name
-        fname = ("comp_" if kind == "comp" else "traj_") + sanitize_name(name) + ".json"
+        fname = "traj_" + sanitize_name(name) + ".json"
         cfg.to_json(str(PRESETS_DIR / fname))
-        return jsonify({"saved": cfg.name, "file": fname, "kind": kind}), 201
+        return jsonify({"saved": cfg.name, "file": fname}), 201
+
+    @app.get("/api/compcfg")
+    def get_compcfg():
+        """全局计算配置 (唯一一份, 前端计算表单初始值来源)."""
+        cc = load_computecfg()
+        out = cc.to_dict()
+        out["path"] = computecfg_path()
+        return jsonify(out)
+
+    @app.post("/api/compcfg")
+    def set_compcfg():
+        """保存全局计算配置."""
+        body = request.get_json(force=True, silent=True) or {}
+        try:
+            cc = ComputeConfig.from_dict(body)
+        except Exception as e:
+            return jsonify({"error": str(e)}), 400
+        path = save_computecfg(cc)
+        return jsonify({"saved": True, "path": path}), 200
 
     @app.post("/api/jobs")
     def create_job():
@@ -499,6 +511,14 @@ def create_app() -> Flask:
             jid = jm.submit(cfg, jobs_override=jobs_override)
         except Exception as e:
             return jsonify({"error": str(e)}), 400
+        # 全局计算配置: 每次提交后自动更新 (重启后恢复上次提交的计算设置)
+        try:
+            eff = dict(cfg)
+            if jobs_override and jobs_override > 0:
+                eff["jobs"] = int(jobs_override)
+            save_computecfg(ComputeConfig.from_dict(eff))
+        except Exception:
+            pass  # 配置保存失败不影响任务提交
         return jsonify({"job_id": jid, "status": jm.get(jid)["status"]}), 201
 
     @app.get("/api/jobs")

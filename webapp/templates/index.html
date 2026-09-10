@@ -93,13 +93,6 @@
     <!-- ===== 子块 2: 计算配置 (可折叠) ===== -->
     <details class="main-panel" open>
       <summary>⚙ 计算配置</summary>
-      <div class="preset-inline">
-        <label>计算预设</label>
-        <select id="compPresetSelect" class="wide"></select>
-        <button id="compPresetLoad" class="ghost">载入</button>
-        <button id="compPresetSave" class="ghost">存为计算预设</button>
-      </div>
-      <div id="compPresetMsg" class="preset-msg"></div>
       <fieldset>
         <legend>流水线与模式</legend>
         <div class="checks">
@@ -112,7 +105,7 @@
       </fieldset>
       <fieldset>
         <legend>并行与搜索</legend>
-        <div class="field"><label>并行进程 jobs</label><input id="cfgJobs" type="number" value="8" min="1" max="64"></div>
+        <div class="field"><label>并行进程 jobs</label><input id="cfgJobs" type="number" value="4" min="1" max="64"></div>
         <div class="field"><label>搜索步进 (天)</label><input id="cfgEraStep" type="number" value="60" min="1" max="365"></div>
         <div class="field"><label>扫描保留窗口数</label><input id="cfgScanKeep" type="number" value="8" min="1" max="40"></div>
         <div class="field"><label>细化保留窗口数</label><input id="cfgRefineKeep" type="number" value="6" min="1" max="20"></div>

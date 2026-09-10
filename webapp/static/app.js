@@ -45,23 +45,22 @@ async function loadPresets() {
     const p = await jfetch("/api/presets");
     const sel = $("presetSelect");
     sel.innerHTML = "";
-    Object.keys(p.traj || {}).forEach(name => {
+    Object.keys(p || {}).forEach(name => {
       const opt = document.createElement("option");
       opt.value = name; opt.textContent = name;
       sel.appendChild(opt);
     });
-    const csel = $("compPresetSelect");
-    csel.innerHTML = "";
-    Object.keys(p.comp || {}).forEach(name => {
-      const opt = document.createElement("option");
-      opt.value = name; opt.textContent = name;
-      csel.appendChild(opt);
-    });
-    const first = Object.values(p.traj || {})[0];
+    const first = Object.values(p || {})[0];
     if (first) fillTrajForm(first);
-    const fcomp = Object.values(p.comp || {})[0];
-    if (fcomp) fillCompForm(fcomp);
   } catch (e) { console.error("presets", e); }
+}
+
+/* 全局计算配置: 唯一一份, 表单初始值来源 (每次提交任务后由后端自动更新) */
+async function loadCompCfg() {
+  try {
+    const c = await jfetch("/api/compcfg");
+    fillCompForm(c);
+  } catch (e) { console.error("compcfg", e); }
 }
 
 function fillTrajForm(cfg) {
@@ -97,18 +96,11 @@ function fillCompForm(cfg) {
   $("cfgRunCompress").checked = cfg.run_compress !== false;
   $("cfgRunFrontier").checked = cfg.run_frontier !== false;
   $("cfgSmoke").checked = !!cfg.smoke;
-  $("cfgJobs").value = cfg.jobs || 8;
+  $("cfgJobs").value = cfg.jobs || 4;
   $("cfgScanKeep").value = cfg.scan_keep || 8;
   $("cfgRefineKeep").value = cfg.refine_keep || 6;
   $("cfgEraStep").value = cfg.era_step_d || 60;   // 搜索步进 (天)
   updateConfigJson();
-  // 载入反馈 (明确显示生效了什么)
-  $("compPresetMsg").textContent =
-    `已载入计算预设「${cfg.name || "?"}」: ` +
-    `scan=${cfg.run_scan !== false} seed=${cfg.run_seed !== false} ` +
-    `compress=${cfg.run_compress !== false} frontier=${cfg.run_frontier !== false} ` +
-    `smoke=${!!cfg.smoke} jobs=${cfg.jobs || 8} ` +
-    `步进=${cfg.era_step_d || 60}d keep=${cfg.scan_keep || 8}/${cfg.refine_keep || 6}`;
 }
 
 /* ---------- 序列节点编辑器 ---------- */
@@ -369,48 +361,33 @@ $("cfgObjective").addEventListener("change", onObjectiveChange);
 $("presetLoad").addEventListener("click", async () => {
   try {
     const p = await jfetch("/api/presets");
-    const cfg = (p.traj || {})[$("presetSelect").value];
+    const cfg = (p || {})[$("presetSelect").value];
     if (cfg) fillTrajForm(cfg);
   } catch (e) { console.error(e); }
 });
 $("presetSelect").addEventListener("change", async () => {
   try {
     const p = await jfetch("/api/presets");
-    const cfg = (p.traj || {})[$("presetSelect").value];
+    const cfg = (p || {})[$("presetSelect").value];
     if (cfg) fillTrajForm(cfg);
   } catch (e) { console.error(e); }
 });
-$("compPresetLoad").addEventListener("click", async () => {
-  try {
-    const p = await jfetch("/api/presets");
-    const cfg = (p.comp || {})[$("compPresetSelect").value];
-    if (cfg) fillCompForm(cfg);
-  } catch (e) { console.error(e); }
-});
-$("compPresetSelect").addEventListener("change", async () => {
-  try {
-    const p = await jfetch("/api/presets");
-    const cfg = (p.comp || {})[$("compPresetSelect").value];
-    if (cfg) fillCompForm(cfg);
-  } catch (e) { console.error(e); }
-});
-async function savePreset(kind) {
+async function savePreset() {
   const name = ($("cfgName").value || "EVVEJU").trim();
   if (!name) { alert("先填写任务名"); return; }
   try {
     const r = await fetch("/api/presets", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, kind, config: collectConfig() }),
+      body: JSON.stringify({ name, config: collectConfig() }),
     });
     const j = await r.json();
     if (!r.ok) { alert("保存失败: " + (j.error || r.statusText)); return; }
-    alert("预设已保存: " + j.saved + "  (" + kind + ")");
+    alert("任务预设已保存: " + j.saved);
     loadPresets();
   } catch (e) { alert("保存失败: " + e.message); }
 }
-$("presetSave").addEventListener("click", () => savePreset("traj"));
-$("compPresetSave").addEventListener("click", () => savePreset("comp"));
+$("presetSave").addEventListener("click", savePreset);
 
 function updateConfigJson() {
   try { $("cfgJsonBox").value = JSON.stringify(collectConfig(), null, 2); }
@@ -771,5 +748,6 @@ $("sysSave").addEventListener("click", async () => {
   // 一次性提示: 关标签=后台继续 (可删, 不影响脚本)
   { const ch = $("closeHint"); if (ch) ch.classList.remove("hidden"); }
   await loadPresets();
+  await loadCompCfg();
   await loadJobList();
 })();

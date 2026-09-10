@@ -11,9 +11,8 @@ test*
 
 runs/
 *.lock.json
+*.compute.json
 PLAN.md
 
 presets/*.json
 !presets/traj_evvejs_cassini.json
-!presets/comp_full.json
-!presets/comp_scanrefine.json
