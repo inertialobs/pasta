@@ -14,20 +14,20 @@ from dataclasses import dataclass, field, asdict
 # ---------------------------------------------------------------------------
 # 默认常量 (与 mp 脚本一致)
 # ---------------------------------------------------------------------------
-DEFAULT_SEQ = ["EARTH", "VENUS", "VENUS", "EARTH", "JUPITER", "URANUS"]
+DEFAULT_SEQ = ["EARTH", "VENUS", "VENUS", "EARTH", "JUPITER", "SATURN"]
 
 DEFAULT_TOF_BOUNDS = [
-    [190.0, 200.0],     # Earth  -> Venus1 (Cassini ~197 d)
-    [300.0, 500.0],     # Venus1 -> Venus2 (Cassini ~397 d)
-    [10.0, 90.0],       # Venus2 -> Earth2 (Cassini ~50 d)
-    [400.0, 1100.0],    # Earth2 -> Jupiter (收紧上界)
-    [1200.0, 4500.0],   # Jupiter-> Uranus
+    [170.0, 220.0],
+    [400.0, 450.0],
+    [40.0, 90.0],
+    [450.0, 700.0],
+    [1100.0, 1500.0]
 ]
 DEFAULT_VINF_BOUNDS_KMPS = [3.5, 6.0]
 DEFAULT_ETA_BOUNDS = [0.01, 0.9]
 DEFAULT_RP_UB = 30.0
 
-DEFAULT_DSM_LIMIT = 750.0                    # m/s (硬核验阈值)
+DEFAULT_DSM_LIMIT = 1300.0                   # m/s (硬核验阈值)
 DEFAULT_PENALTY = [10.0, 0.2]                # 默认 DSM 越界罚 (线性, 二次)
 DEFAULT_FRONTIER_PENALTY = [30.0, 2.0]       # 前沿阶段更强罚
 DEFAULT_WL, DEFAULT_VLF = 2e-5, 5000.0       # 发射 v∞ 超 5.0 km/s 罚 (m/s)
@@ -35,8 +35,7 @@ DEFAULT_WA, DEFAULT_VAF = 2e-5, 9000.0       # 到达 v∞ 超 9.0 km/s 罚 (m/s
 
 # 发射窗口时代 (与 mp 脚本一致)
 DEFAULT_ERAS = [
-    ["2029-01-01", "2033-06-30"],   # UOP (原 "uop")
-    ["2017-01-01", "2021-01-01"],   # Cassini (原 "cassini")
+    ["1997-01-01", "1997-12-31"]
 ]
 DEFAULT_ERA_STEP_D = 60.0           # None → smoke?90 : 60 (与脚本一致)
 
@@ -47,7 +46,7 @@ DEFAULT_SAFE_RADIUS = None           # 键: 行星 TAG -> 半径 m
 @dataclass
 class TrajConfig:
     # --- 基本 ---
-    name: str = "EVVEJU"
+    name: str = "Cassini"
     seq: list = field(default_factory=lambda: list(DEFAULT_SEQ))
 
     # --- 约束/边界 ---
