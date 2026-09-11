@@ -183,6 +183,13 @@ class JobManager:
         rc = proc.poll()
         if rc is None:
             return
+        # 终结状态只处理一次: 加锁占位 finished (请求线程与监督线程都会进来)
+        with self._lock:
+            if job.get("finished") is not None:
+                return
+            job["finished"] = time.time()
+            if self._active == jid:
+                self._active = None
         # 任务已结束: 关闭日志句柄 (之后不再 flush/close; get/supervise 并发
         # 进入时句柄可能已被对方关闭, 容错跳过即可)
         log_f = job.get("log_f")
@@ -209,12 +216,8 @@ class JobManager:
         else:
             job["status"] = "failed"
         job["rc"] = rc
-        job["finished"] = time.time()
         slog.inf(f"[job] end jid={jid} status={job['status']} rc={rc} "
                  f"elapsed={job['finished'] - job.get('started', job['finished']):.1f}s")
-        with self._lock:
-            if self._active == jid:
-                self._active = None
 
     # ------------------------------------------------------------------
     @staticmethod
