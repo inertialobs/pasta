@@ -194,11 +194,15 @@ class JobManager:
             except Exception:
                 pass
         result_path = Path(job["dir"]) / "result.json"
-        if rc == 0 and result_path.exists():
-            # 成功优先于 cancelled 标志: cancel 可能在进程收尾后才到达
-            job["status"] = "done"
+        if result_path.exists():
+            # result.json 是权威: run_cli 正常收尾总会写 (ok/no_candidates/
+            # cancelled/error), 口径与 _disk_status / 历史任务一致。
+            # 注: 已知 pykep/OpenBLAS 在部分父进程上下文下于解释器退出期崩溃
+            # (rc=-6, "corrupted double-linked list"), 此时其实已写完结果;
+            # 故此处以结果文件为准, 不再依赖 rc。退出期崩溃本身尚未处理。
+            job["status"] = self._disk_status(Path(job["dir"]))
         elif job.get("cancelled"):
-            # cancel 打的标志优先: taskkill /F 退出码非 130, 不能只看 rc
+            # 无结果时才看 cancel 标志: taskkill /F 退出码非 130, 不能只看 rc
             job["status"] = "cancelled"
         elif rc == 130:
             job["status"] = "cancelled"
