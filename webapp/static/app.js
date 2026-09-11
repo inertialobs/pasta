@@ -145,6 +145,8 @@ function refreshSeqRoles() {
     const role = i === 0 ? "depart" : (i === rows.length - 1 ? "arrive" : "flyby");
     row.className = "node-row " + role;
     row.dataset.i = i;
+    const idxSpan = row.querySelector(".node-idx");
+    if (idxSpan) idxSpan.textContent = i + 1;
     const roleSpan = row.querySelector(".node-role");
     roleSpan.className = "node-role " + role;
     roleSpan.textContent = role === "depart" ? "出发" : role === "arrive" ? "到达" : "飞掠";
