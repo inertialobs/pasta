@@ -189,11 +189,20 @@ function buildTofTable(nLegs) {
   let lastCfg = {};
   try { lastCfg = JSON.parse($("cfgJsonBox").value || "{}") || {}; } catch (e) { lastCfg = {}; }
   // 优先级: 预设载入带来的 tof_bounds > 上次表单值 (节点增删时保留编辑) > 默认值
+  const def = defaultTofBounds(nLegs);
+  const fallback = (i) => [...(def[i] || [60, 5000])];
   const pend = state.pendingTofBounds;
-  const arr = (pend && pend.length === nLegs)
-    ? pend
-    : (lastCfg.tof_bounds && lastCfg.tof_bounds.length === nLegs)
-      ? lastCfg.tof_bounds : defaultTofBounds(nLegs);
+  let arr;
+  if (pend && pend.length === nLegs) {
+    arr = pend.map((b, i) => (Array.isArray(b) ? [...b] : fallback(i)));
+  } else if (Array.isArray(lastCfg.tof_bounds)) {
+    // 腿数变化时按索引保留已编辑值, 多出的新腿补默认 (不再整体重置)
+    arr = lastCfg.tof_bounds.slice(0, nLegs)
+      .map((b, i) => (Array.isArray(b) ? [...b] : fallback(i)));
+  } else {
+    arr = [];
+  }
+  while (arr.length < nLegs) arr.push(fallback(arr.length));
   state.pendingTofBounds = null;   // 只消费一次, 后续节点增删走 lastCfg 回退
   const seq = state.seq;
   for (let i = 0; i < nLegs; i++) {
