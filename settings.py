@@ -7,6 +7,11 @@ from pathlib import Path
 # (不要在此处用 Path.cwd() 锚定: 本模块在 main() 之前就被 import, 那时还未 chdir)
 CONFIG_FILE = Path("pasta.settings.json")
 
+# 计算字段 (任务的计算/并行参数; 轨迹字段见 orbcalc.config.TrajConfig)。
+# 每任务快照写入 runs/<jid>/config.json, run_cli 据此执行。
+COMPUTE_FIELDS = {"run_scan", "run_seed", "run_compress", "run_frontier",
+                  "scan_keep", "refine_keep", "era_step_d", "jobs"}
+
 class Settings(dict):
     def __init__(self):
         super().__init__()
@@ -20,7 +25,6 @@ class Settings(dict):
         self["run_seed"] = True
         self["run_compress"] = True
         self["run_frontier"] = True
-        # smoke : deprecated, to use test.py instead, totaly clean it
         self["scan_keep"] = 8
         self["refine_keep"] = 6
         self["era_step_d"] = None

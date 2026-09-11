@@ -2,87 +2,84 @@
 """
 TrajConfig — 轨迹优化任务的完整配置 (JSON 可序列化, spawn 可 pickle)。
 
-默认值逐项对齐 temp/EVVEJU_TOF_1DSM_mp.py 的当前常量, 保证与 CLI 脚本数值等价。
-"""
-from __future__ import annotations
+结构对齐 settings.Settings:
+    - 继承 dict: 支持 cfg.seq 属性访问, 也支持 cfg["seq"] / dict 操作;
+    - update(): 只接受已知字段, 先在候选副本上 validate, 通过后再提交;
+    - DEFAULTS 为唯一字段清单与默认值, 每实例深拷贝 (可变默认值不共享)。
 
+只负责"轨迹"配置; 计算/系统参数 (jobs、run_*、scan_keep 等) 归 settings.py。
+默认轨迹 (seq/eras/tof_bounds) 取自内置预设 presets/traj_evvejs_cassini.json。
+"""
+import copy
 import datetime
 import json
+import math
 import re
-from dataclasses import dataclass, field, asdict
+from pathlib import Path
 
-# ---------------------------------------------------------------------------
-# 默认常量 (与 mp 脚本一致)
-# ---------------------------------------------------------------------------
-DEFAULT_SEQ = ["EARTH", "VENUS", "VENUS", "EARTH", "JUPITER", "SATURN"]
-
-DEFAULT_TOF_BOUNDS = [
-    [170.0, 220.0],
-    [400.0, 450.0],
-    [40.0, 90.0],
-    [450.0, 700.0],
-    [1100.0, 1500.0]
-]
-DEFAULT_VINF_BOUNDS_KMPS = [3.5, 6.0]
-DEFAULT_ETA_BOUNDS = [0.01, 0.9]
-DEFAULT_RP_UB = 30.0
-
-DEFAULT_DSM_LIMIT = 1300.0                   # m/s (硬核验阈值)
-DEFAULT_PENALTY = [10.0, 0.2]                # 默认 DSM 越界罚 (线性, 二次)
-DEFAULT_FRONTIER_PENALTY = [30.0, 2.0]       # 前沿阶段更强罚
-DEFAULT_WL, DEFAULT_VLF = 2e-5, 5000.0       # 发射 v∞ 超 5.0 km/s 罚 (m/s)
-DEFAULT_WA, DEFAULT_VAF = 2e-5, 9000.0       # 到达 v∞ 超 9.0 km/s 罚 (m/s)
-
-# 发射窗口时代 (与 mp 脚本一致)
-DEFAULT_ERAS = [
-    ["1997-01-01", "1997-12-31"]
-]
-DEFAULT_ERA_STEP_D = 60.0           # None → smoke?90 : 60 (与脚本一致)
-
-# 行星安全半径覆盖 (m); 缺省看 planets.DEFAULT_SAFE_RADIUS
-DEFAULT_SAFE_RADIUS = None           # 键: 行星 TAG -> 半径 m
+# 默认轨迹来源: 内置 Cassini 预设 (cwd 相对, 依赖启动时 chdir 到运行根)。
+# 缺失/损坏即快速失败, 避免用残缺默认值静默跑出错误结果。
+DEFAULT_TRAJ_FILE = Path("presets/traj_evvejs_cassini.json")
+_TRAJ_KEYS = ("seq", "eras", "tof_bounds")
 
 
-@dataclass
-class TrajConfig:
+def _load_default_traj():
+    try:
+        raw = json.loads(DEFAULT_TRAJ_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        raise RuntimeError(f"默认轨迹预设不可读: {DEFAULT_TRAJ_FILE}: {e}") from e
+    missing = [k for k in _TRAJ_KEYS if k not in raw]
+    if missing:
+        raise RuntimeError(f"{DEFAULT_TRAJ_FILE} 缺少默认轨迹字段: {missing}")
+    return {k: raw[k] for k in _TRAJ_KEYS}
+
+
+default_traj = _load_default_traj()
+
+# 唯一字段清单: 键顺序 = JSON 输出顺序; 可变值在实例化时深拷贝
+DEFAULTS = {
     # --- 基本 ---
-    name: str = "Cassini"
-    seq: list = field(default_factory=lambda: list(DEFAULT_SEQ))
-
+    "name": "Cassini",
+    # --- 默认轨迹 (来自内置预设) ---
+    **default_traj,                          # seq / eras / tof_bounds
     # --- 约束/边界 ---
-    safe_radius: dict = field(default_factory=dict)   # TAG -> 半径 m (覆盖默认)
-    tof_bounds: list = field(default_factory=lambda: [list(b) for b in DEFAULT_TOF_BOUNDS])
-    vinf_bounds_kmps: list = field(default_factory=lambda: list(DEFAULT_VINF_BOUNDS_KMPS))
-    eta_bounds: list = field(default_factory=lambda: list(DEFAULT_ETA_BOUNDS))
-    rp_ub: float = DEFAULT_RP_UB    # 全局飞掠 rp 上界 (pykep mga_1dsm 仅支持标量)
-
+    "safe_radius": {},                       # TAG -> 半径 m (覆盖 planets 默认)
+    "vinf_bounds_kmps": [3.5, 6.0],
+    "eta_bounds": [0.01, 0.9],
+    "rp_ub": 30.0,                           # 全局飞掠 rp 上界 (pykep mga_1dsm 仅支持标量)
     # --- 目标与罚函数 ---
-    objective: str = "min_tof"        # "min_tof" | "min_dsm" | "custom"
-    objective_weights: list = field(default_factory=lambda: [1.0, 0.0])  # custom: [TOF, DSM] 权重
-    dsm_limit_ms: float = DEFAULT_DSM_LIMIT
-    penalty: list = field(default_factory=lambda: list(DEFAULT_PENALTY))
-    frontier_penalty: list = field(default_factory=lambda: list(DEFAULT_FRONTIER_PENALTY))
-    wl: float = DEFAULT_WL
-    vinf_launch_limit_ms: float = DEFAULT_VLF
-    wa: float = DEFAULT_WA
-    vinf_arrival_limit_ms: float = DEFAULT_VAF
+    "objective": "min_tof",                  # "min_tof" | "min_dsm" | "custom"
+    "objective_weights": [1.0, 0.0],         # custom: [TOF, DSM] 权重
+    "dsm_limit_ms": 1300.0,                  # m/s (硬核验阈值)
+    "penalty": [10.0, 0.2],                  # 默认 DSM 越界罚 (线性, 二次)
+    "frontier_penalty": [30.0, 2.0],         # 前沿阶段更强罚
+    "wl": 2e-5,                              # 发射 v∞ 超 5.0 km/s 罚 (m/s)
+    "vinf_launch_limit_ms": 5000.0,
+    "wa": 2e-5,                              # 到达 v∞ 超 9.0 km/s 罚 (m/s)
+    "vinf_arrival_limit_ms": 9000.0,
+}
 
-    # --- 发射窗口时代 ---
-    eras: list = field(default_factory=lambda: [list(e) for e in DEFAULT_ERAS])
-    era_step_d: float | None = None   # None → smoke?90:60 (与脚本一致)
 
-    # --- 并行 / 模式 ---
-    jobs: int = 4
-    smoke: bool = False
-    scan_keep: int = 8    # 扫描阶段保留的窗口数 (与脚本硬编码 8 一致)
-    refine_keep: int = 6  # 细化阶段处理的候选窗口数 (与脚本硬编码 6 一致)
-    run_scan: bool = True             # [1] 窗口粗扫 (含 [2] 细化, 与脚本耦合)
-    run_seed: bool = True             # [3] 弹道播种 (smoke 时脚本自动跳过)
-    run_compress: bool = True         # [4] 宽 TOF 压缩 (种子解 ±25% 盒)
-    run_frontier: bool = True         # [5] 紧 TOF 压缩 (种子解 ±12% 盒, 强罚)
+class TrajConfig(dict):
+    def __init__(self):
+        super().__init__()
+        dict.update(self, copy.deepcopy(DEFAULTS))
+
+    def __getattr__(self, name):
+        try:
+            return self[name]
+        except KeyError:
+            raise AttributeError(f"'TrajConfig' has no attribute '{name}'")
+
+    def __setattr__(self, name, value):
+        if name in self:
+            self[name] = value
+        else:
+            raise AttributeError(f"'TrajConfig' has no attribute '{name}'")
 
     # ------------------------------------------------------------------
-    def validate(self):
+    def validate(self) -> bool:
+        '''validate config'''
         n_legs = len(self.seq) - 1
         if n_legs < 1:
             raise ValueError("seq 至少需要 2 个天体")
@@ -111,28 +108,22 @@ class TrajConfig:
                 or not (0 < self.eta_bounds[0] <= self.eta_bounds[1] <= 1)):
             raise ValueError(f"eta_bounds 应为 0 < lo <= hi <= 1, 实际 {self.eta_bounds}")
         for fname in ("penalty", "frontier_penalty"):
-            v = getattr(self, fname)
+            v = self[fname]
             if (not isinstance(v, (list, tuple)) or len(v) != 2
                     or not all(_num(x) and x >= 0 for x in v)):
                 raise ValueError(f"{fname} 应为 [线性权, 二次权] 两个非负数值, 实际 {v}")
         for fname in ("dsm_limit_ms", "wl", "wa",
                       "vinf_launch_limit_ms", "vinf_arrival_limit_ms"):
-            v = getattr(self, fname)
+            v = self[fname]
             if not (_num(v) and v >= 0):
                 raise ValueError(f"{fname} 应为非负数值, 实际 {v}")
         for k, v in self.safe_radius.items():
             if not (_num(v) and v > 0):
                 raise ValueError(f"safe_radius[{k}] 应为正数 (m), 实际 {v!r}")
-        if not (1 <= self.jobs <= 256):
-            raise ValueError(f"jobs 应在 1-256, 实际 {self.jobs}")
         if self.objective not in ("min_tof", "min_dsm", "custom"):
             raise ValueError(f"objective 应为 min_tof/min_dsm/custom, 实际 {self.objective}")
         if self.objective == "custom" and len(self.objective_weights) != 2:
             raise ValueError(f"objective_weights 应为 [TOF权重, DSM权重], 实际 {self.objective_weights}")
-        if self.scan_keep < 1 or self.refine_keep < 1:
-            raise ValueError("scan_keep / refine_keep >= 1")
-        if self.era_step_d is not None and self.era_step_d < 1:
-            raise ValueError("era_step_d (搜索步进) >= 1 天")
         # de440s 星历覆盖约 1849-2150 (MJD2000 约 ±54820); 范围外所有窗口都会失败
         EPH_LO, EPH_HI = -54000.0, 54000.0
         _epoch0 = datetime.date(2000, 1, 1)
@@ -153,20 +144,23 @@ class TrajConfig:
         return True
 
     # ------------------------------------------------------------------
-    def to_dict(self):
-        d = asdict(self)
-        return d
+    def update(self, d: dict):
+        '''已知字段过滤 + 候选副本校验通过后再提交 (与 Settings.update 同构)'''
+        patch = {k: v for k, v in (d or {}).items() if k in self}
+        cand = TrajConfig()
+        dict.update(cand, self)
+        dict.update(cand, patch)
+        cand.validate()
+        dict.update(self, patch)
 
     @classmethod
     def from_dict(cls, d):
-        known = {f.name for f in cls.__dataclass_fields__.values()}
-        kw = {k: v for k, v in d.items() if k in known}
-        cfg = cls(**kw)
-        cfg.validate()
+        cfg = cls()
+        cfg.update(d or {})
         return cfg
 
     def to_json(self, path=None, indent=2):
-        txt = json.dumps(self.to_dict(), indent=indent, ensure_ascii=False)
+        txt = json.dumps(dict(self), indent=indent, ensure_ascii=False)
         if path:
             with open(path, "w", encoding="utf-8") as f:
                 f.write(txt)
@@ -186,8 +180,10 @@ class TrajConfig:
 
 
 def _num(v):
-    """数值判定 (bool 除外)."""
-    return isinstance(v, (int, float)) and not isinstance(v, bool) and v == v and v not in (float("inf"), float("-inf"))
+    """数值判定 (bool 除外, 排除 NaN/Inf; 超大 int 视为有限)."""
+    if isinstance(v, bool):
+        return False
+    return isinstance(v, int) or (isinstance(v, float) and math.isfinite(v))
 
 
 def sanitize_name(name):

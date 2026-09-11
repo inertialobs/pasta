@@ -26,7 +26,7 @@ from flask import Flask, jsonify, render_template, request, send_from_directory
 
 from orbcalc import slog
 from orbcalc.config import TrajConfig, sanitize_name
-from settings import CONFIG_FILE, settings
+from settings import COMPUTE_FIELDS, CONFIG_FILE, settings
 
 # 运行根目录: main.py 启动时已 chdir 到此 (源码=项目根, 冻结=exe 目录)。
 # 资源 (webapp/presets) 与用户数据 (runs/presets) 同根。
@@ -80,9 +80,9 @@ class JobManager:
     # ------------------------------------------------------------------
     def submit(self, config_dict: dict, jobs_override: int | None = None) -> str:
         cfg = TrajConfig.from_dict(config_dict)
-        if jobs_override and jobs_override > 0:
-            cfg.jobs = int(jobs_override)
         cfg.validate()
+        comp = _compute(config_dict, jobs_override)
+        job_cfg = {**dict(cfg), **comp}   # 轨迹 + 计算快照, 供 run_cli 读取
         with self._lock:
             # 同秒同名也要唯一: 目录已存在/内存已有则追加序号 (加锁内完成, 防并发)
             base = time.strftime("%Y%m%d_%H%M%S") + "_" + sanitize_name(cfg.name)
@@ -93,7 +93,8 @@ class JobManager:
                 n += 1
             d = self.runs_dir / jid
             d.mkdir(parents=True, exist_ok=True)
-            cfg.to_json(str(d / "config.json"))
+            with open(d / "config.json", "w", encoding="utf-8") as f:
+                json.dump(job_cfg, f, ensure_ascii=False, indent=2)
             with open(d / "request.json", "w", encoding="utf-8") as f:
                 json.dump(config_dict, f, ensure_ascii=False, indent=2)
             self._jobs[jid] = {
@@ -101,14 +102,14 @@ class JobManager:
                 "name": cfg.name,
                 "created": time.time(),
                 "status": "queued" if self._active else "starting",
-                "jobs": cfg.jobs,
+                "jobs": comp["jobs"],
                 "dir": str(d),
             }
             if self._active is None:
                 self._start(jid)
             else:
                 self._queue.append(jid)
-        slog.inf(f"[job] submit jid={jid} name={cfg.name} jobs={cfg.jobs} seq={cfg.seq}")
+        slog.inf(f"[job] submit jid={jid} name={cfg.name} jobs={comp['jobs']} seq={cfg.seq}")
         return jid
 
     def _start(self, jid: str) -> None:
@@ -395,14 +396,20 @@ TRAJ_FIELDS = {"name", "seq", "safe_radius", "tof_bounds", "vinf_bounds_kmps",
                "objective_weights", "dsm_limit_ms", "penalty", "frontier_penalty",
                "wl", "vinf_launch_limit_ms", "wa", "vinf_arrival_limit_ms"}
 
-# 全局配置 (settings) 字段分组: 系统 / 计算
+# 全局配置 (settings) 字段分组: 系统; 计算字段 COMPUTE_FIELDS 见 settings.py
 SYS_FIELDS = {"host", "port", "open_browser"}
-COMPUTE_FIELDS = {"run_scan", "run_seed", "run_compress", "run_frontier",
-                  "scan_keep", "refine_keep", "era_step_d", "jobs"}
 
 
 def _subdict(d: dict, fields: set) -> dict:
     return {k: v for k, v in d.items() if k in fields}
+
+
+def _compute(config: dict, jobs_override=None) -> dict:
+    """任务计算字段: 取 config 中的计算键, 缺省回退全局 settings; 再套 jobs 覆盖."""
+    c = {k: config.get(k, settings[k]) for k in COMPUTE_FIELDS}
+    if jobs_override and jobs_override > 0:
+        c["jobs"] = int(jobs_override)
+    return c
 
 
 def _load_preset_dir(dirpath: Path, traj: dict) -> None:
@@ -422,7 +429,7 @@ def _load_preset_dir(dirpath: Path, traj: dict) -> None:
         except Exception:
             continue  # 损坏的预设文件跳过
         title = raw.get("title") or cfg.name
-        traj[title] = _subdict(cfg.to_dict(), TRAJ_FIELDS)
+        traj[title] = _subdict(dict(cfg), TRAJ_FIELDS)
 
 
 def load_presets() -> dict:
@@ -539,10 +546,7 @@ def create_app() -> Flask:
             return jsonify({"error": str(e)}), 400
         # 全局计算配置: 每次提交后自动更新 (重启后恢复上次提交的计算设置)
         try:
-            eff = dict(cfg)
-            if jobs_override and jobs_override > 0:
-                eff["jobs"] = int(jobs_override)
-            settings.update(eff)
+            settings.update(_compute(cfg, jobs_override))
             settings.save_file()
         except Exception:
             pass  # 配置保存失败不影响任务提交

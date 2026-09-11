@@ -5,9 +5,11 @@
     python -m orbcalc.run_cli --config runs/<job>/config.json --jobs 8 --outdir runs/<job> [--debug]
 
 行为与 temp/EVVEJU_TOF_1DSM_mp.py 主流程逐位一致 (cfg 驱动):
-    [1] 扫描 -> [2] 细化 (run_scan)   | [3] 弹道播种 (run_seed, smoke 自动跳过)
+    [1] 扫描 -> [2] 细化 (run_scan)   | [3] 弹道播种 (run_seed)
     [4] 宽 TOF 压缩 (run_compress)   | [5] 紧 TOF 压缩 (run_frontier)
     [6] pick_best -> 报告/汇总/绘图数据
+
+配置: 任务 JSON 同时含轨迹字段 (转 TrajConfig) 与计算字段 (COMPUTE_FIELDS, 见 settings)。
 
 日志: 统一走 orbcalc.slog (单写入者, [时间戳][级别] 标签+上下文)。
     绑定到 sys.stdout (web 子进程被 JobManager 重定向到 log.txt)。
@@ -31,6 +33,7 @@ import platform
 import sys
 import time
 import traceback
+from pathlib import Path
 
 import numpy as np
 
@@ -41,6 +44,7 @@ from .plot_data import build_plot_json, render_png
 from .stages import (phase_scan_mp, phase_refine_mp, phase_ballistic_seed_mp,
                      compress_pass_mp, pick_best, select_key)
 from . import slog
+from settings import COMPUTE_FIELDS, settings
 
 
 def _force_utf8_stdio():
@@ -52,29 +56,37 @@ def _force_utf8_stdio():
             pass
 
 
-def _dump_env(cfg):
+def _dump_env(cfg, comp):
     slog.inf(f"[env] PASTA run_cli | pid={os.getpid()} | py={platform.python_version()} | "
              f"os={platform.platform()} | cpu_cores={os.cpu_count()}")
     slog.inf(f"[env] seq={cfg.seq} | n_legs={len(cfg.seq) - 1} | objective={cfg.objective} | "
              f"dsm_limit={cfg.dsm_limit_ms:.0f} m/s | vinf_bounds={cfg.vinf_bounds_kmps}")
     slog.inf(f"[env] eras={cfg.eras} | tof_bounds={cfg.tof_bounds} | rp_ub={cfg.rp_ub}")
-    slog.inf(f"[env] jobs={cfg.jobs} | smoke={cfg.smoke} | scan_keep={cfg.scan_keep} | "
-             f"refine_keep={cfg.refine_keep} | era_step_d={cfg.era_step_d}")
-    slog.inf(f"[env] run: scan={cfg.run_scan} seed={cfg.run_seed} compress={cfg.run_compress} "
-             f"frontier={cfg.run_frontier}")
+    slog.inf(f"[env] jobs={comp['jobs']} | scan_keep={comp['scan_keep']} | "
+             f"refine_keep={comp['refine_keep']} | era_step_d={comp['era_step_d']}")
+    slog.inf(f"[env] run: scan={comp['run_scan']} seed={comp['run_seed']} "
+             f"compress={comp['run_compress']} frontier={comp['run_frontier']}")
     slog.inf(f"[env] penalty={cfg.penalty} | "
              f"frontier_penalty={cfg.frontier_penalty} | eta_bounds={cfg.eta_bounds}")
 
 
-def run(args):
-    cfg = TrajConfig.from_json(path=args.config)
+def _load(args):
+    """读任务 JSON: 轨迹 -> TrajConfig, 计算 -> comp (缺省回退 settings 默认)."""
+    data = json.loads(Path(args.config).read_text(encoding="utf-8"))
+    cfg = TrajConfig.from_dict(data)
+    comp = {k: data.get(k, settings[k]) for k in COMPUTE_FIELDS}
     if args.jobs and args.jobs > 0:
-        cfg.jobs = int(args.jobs)
+        comp["jobs"] = int(args.jobs)
     cfg.validate()
+    return cfg, comp
+
+
+def run(args):
+    cfg, comp = _load(args)
 
     outdir = os.path.abspath(args.outdir)
     os.makedirs(outdir, exist_ok=True)
-    _dump_env(cfg)
+    _dump_env(cfg, comp)
 
     t_start = time.time()
     summary = {"job": cfg.name, "status": "ok", "error": None}
@@ -88,14 +100,14 @@ def run(args):
         from contextlib import nullcontext
 
         # 仅当存在并行阶段 (扫描/压缩) 时创建进程池, 纯评估任务零进程开销
-        need_pool = cfg.run_scan or cfg.run_compress or cfg.run_frontier
-        _ctx = ProcessPoolExecutor(max_workers=cfg.jobs) if need_pool else nullcontext(None)
+        need_pool = comp["run_scan"] or comp["run_compress"] or comp["run_frontier"]
+        _ctx = ProcessPoolExecutor(max_workers=comp["jobs"]) if need_pool else nullcontext(None)
         with _ctx as ex:
-            if cfg.run_scan:
+            if comp["run_scan"]:
                 slog.inf("[phase] [1/6] scan 开始")
-                cands = phase_scan_mp(ex, cfg)
+                cands = phase_scan_mp(ex, cfg, comp)
                 slog.inf("[phase] [2/6] refine 开始")
-                best_ref = phase_refine_mp(ex, cfg, cands)
+                best_ref = phase_refine_mp(ex, cfg, comp, cands)
                 if best_ref is None:
                     slog.err("[main] refine failed (all windows sade failed)")
                     summary["status"] = "error"
@@ -104,31 +116,29 @@ def run(args):
                     return 2
                 f_ref, x_ref, info_ref, udp_ref = best_ref
                 candidates.append((x_ref, udp_ref))
-                if cfg.run_seed and not cfg.smoke:
+                if comp["run_seed"]:
                     slog.inf("[phase] [3/6] ballistic seed")
                     x_seed = phase_ballistic_seed_mp(ex, cfg, x_ref)
                     candidates.append((x_seed, DSM_UDP(cfg, t0=[x_seed[0] - 30, x_seed[0] + 30])))
 
-            if (cfg.run_compress or cfg.run_frontier) and candidates:
+            if (comp["run_compress"] or comp["run_frontier"]) and candidates:
                 def _key(item):
                     info = decode(item[0], item[1].udp)
                     return select_key(cfg, info)
                 candidates.sort(key=_key)
                 seeds = candidates[:2]
-                if cfg.run_compress:
+                if comp["run_compress"]:
                     slog.inf("[phase] [4/6] wide compress")
                     for k, (sx, sudp) in enumerate(seeds):
                         xw = compress_pass_mp(ex, cfg, sx, f"4/6 compress wide #{k + 1}",
-                                              cfg.penalty[0], cfg.penalty[1],
-                                              smoke=cfg.smoke, pct=0.25)
+                                              cfg.penalty[0], cfg.penalty[1], pct=0.25)
                         candidates.append((xw, TOF_UDP(cfg, t0=[sx[0] - 30, sx[0] + 30])))
-                if cfg.run_frontier:
+                if comp["run_frontier"]:
                     slog.inf("[phase] [5/6] frontier tight compress")
                     bi, bx, budp = pick_best(cfg, candidates)
                     xf = compress_pass_mp(ex, cfg, bx, "5/6 frontier tight",
                                           cfg.frontier_penalty[0],
-                                          cfg.frontier_penalty[1], smoke=cfg.smoke,
-                                          pct=0.12)
+                                          cfg.frontier_penalty[1], pct=0.12)
                     candidates.append((xf, TOF_UDP(cfg, t0=[xf[0] - 30, xf[0] + 30])))
 
         if not candidates:
@@ -191,8 +201,8 @@ def main():
     _force_utf8_stdio()
     multiprocessing.freeze_support()
     ap = argparse.ArgumentParser(description="orbcalc 计算入口 (web 子进程 / CLI)")
-    ap.add_argument("--config", required=True, help="TrajConfig JSON 路径")
-    ap.add_argument("--jobs", type=int, default=0, help="覆盖 cfg.jobs (0 = 用配置值)")
+    ap.add_argument("--config", required=True, help="任务 JSON 路径 (轨迹 + 计算字段)")
+    ap.add_argument("--jobs", type=int, default=0, help="覆盖配置里的 jobs (0 = 用配置值)")
     ap.add_argument("--outdir", required=True, help="产物目录 (log/result/plot/best_x)")
     ap.add_argument("--debug", action="store_true", help="DEBUG 级别日志")
     args = ap.parse_args()
