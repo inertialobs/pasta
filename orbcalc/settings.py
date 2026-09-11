@@ -1,34 +1,17 @@
 # -*- coding: utf-8 -*-
-import os
+import copy
 import json
+import os
 from pathlib import Path
 
-# 相对路径, 在 load_file/save_file 调用时才解析 -> main.py 已 chdir 到运行根。
-# (不要在此处用 Path.cwd() 锚定: 本模块在 main() 之前就被 import, 那时还未 chdir)
-CONFIG_FILE = Path("pasta.settings.json")
+from . import COMPUTE_DEFAULTS, SYS_DEFAULTS
 
-# 计算字段 (任务的计算/并行参数; 轨迹字段见 orbcalc.config.TrajConfig)。
-# 每任务快照写入 runs/<jid>/config.json, run_cli 据此执行。
-COMPUTE_FIELDS = {"run_scan", "run_seed", "run_compress", "run_frontier",
-                  "scan_keep", "refine_keep", "era_step_d", "jobs"}
+CONFIG_FILE = Path("pasta.settings.json")
 
 class Settings(dict):
     def __init__(self):
         super().__init__()
-        self['host']="127.0.0.1"
-        self["port"]=8765
-        # self.single_instance : deprecated, default as True
-        self["open_browser"]=True
-        # show_lan_warning : deprecated
-
-        self["run_scan"] = True
-        self["run_seed"] = True
-        self["run_compress"] = True
-        self["run_frontier"] = True
-        self["scan_keep"] = 8
-        self["refine_keep"] = 6
-        self["era_step_d"] = None
-        self["jobs"] = 4
+        dict.update(self, copy.deepcopy({**SYS_DEFAULTS, **COMPUTE_DEFAULTS}))
 
     def __getattr__(self, name):
         try:
@@ -72,10 +55,6 @@ class Settings(dict):
             raise ValueError("era_step_d 应为 null 或 >= 1 天")
         return True
 
-    #is_lan deprecated, use Settings["host"]=="0.0.0.0" instead
-
-    #to_dict deprecated, it is a dict
-
     def update(self, d:dict):
         '''update config'''
         patch = {k: v for k, v in (d or {}).items() if k in self}
@@ -86,12 +65,4 @@ class Settings(dict):
         cand.validate()
         dict.update(self, patch)
 
-    #__str__:use dict.__str__
-
-    # the host still use sysLan 勾选框
-
 settings = Settings()
-# when need to find setting options, use :
-# from orbcalc.settings import settings
-# settings["host"]/settings.host
-# 首次加载后显式调用validate并update

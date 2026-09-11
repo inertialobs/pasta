@@ -9,7 +9,7 @@
     [4] 宽 TOF 压缩 (run_compress)   | [5] 紧 TOF 压缩 (run_frontier)
     [6] pick_best -> 报告/汇总/绘图数据
 
-配置: 任务 JSON 同时含轨迹字段 (转 TrajConfig) 与计算字段 (COMPUTE_FIELDS, 见 settings)。
+配置: 任务 JSON 同时含轨迹字段 (转 TrajConfig) 与计算字段 (COMPUTE_FIELDS, 见 orbcalc/__init__.py)。
 
 日志: 统一走 orbcalc.slog (单写入者, [时间戳][级别] 标签+上下文)。
     绑定到 sys.stdout (web 子进程被 JobManager 重定向到 log.txt)。
@@ -44,7 +44,8 @@ from .plot_data import build_plot_json, render_png
 from .stages import (phase_scan_mp, phase_refine_mp, phase_ballistic_seed_mp,
                      compress_pass_mp, pick_best, select_key)
 from . import slog
-from orbcalc.settings import COMPUTE_FIELDS, settings
+from . import COMPUTE_FIELDS
+from .settings import settings
 
 
 def _force_utf8_stdio():

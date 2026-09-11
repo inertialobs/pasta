@@ -24,9 +24,9 @@ from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request, send_from_directory
 
-from orbcalc import slog
+from orbcalc import COMPUTE_FIELDS, SYS_FIELDS, TRAJ_FIELDS, slog
 from orbcalc.config import TrajConfig, sanitize_name
-from orbcalc.settings import COMPUTE_FIELDS, CONFIG_FILE, settings
+from orbcalc.settings import CONFIG_FILE, settings
 
 # 运行根目录: main.py 启动时已 chdir 到此 (源码=项目根, 冻结=exe 目录)。
 # 资源 (webapp/presets) 与用户数据 (runs/presets) 同根。
@@ -390,14 +390,7 @@ class JobManager:
         return True
 
 
-# 预设字段分组: 任务配置 (轨迹)
-TRAJ_FIELDS = {"name", "seq", "safe_radius", "tof_bounds", "vinf_bounds_kmps",
-               "eta_bounds", "rp_ub", "eras", "objective",
-               "objective_weights", "dsm_limit_ms", "penalty", "frontier_penalty",
-               "wl", "vinf_launch_limit_ms", "wa", "vinf_arrival_limit_ms"}
-
-# 全局配置 (settings) 字段分组: 系统; 计算字段 COMPUTE_FIELDS 见 settings.py
-SYS_FIELDS = {"host", "port", "open_browser"}
+# 字段分组 (TRAJ_FIELDS / SYS_FIELDS / COMPUTE_FIELDS) 见 orbcalc/__init__.py
 
 
 def _subdict(d: dict, fields: set) -> dict:

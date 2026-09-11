@@ -8,6 +8,7 @@ TrajConfig — 轨迹优化任务的完整配置 (JSON 可序列化, spawn 可 p
     - DEFAULTS 为唯一字段清单与默认值, 每实例深拷贝 (可变默认值不共享)。
 
 只负责"轨迹"配置; 计算/系统参数 (jobs、run_*、scan_keep 等) 归 settings.py。
+默认值与字段集集中定义在 orbcalc/__init__.py (TRAJ_DEFAULTS/TRAJ_FIELDS);
 默认轨迹 (seq/eras/tof_bounds) 取自内置预设 presets/traj_evvejs_cassini.json。
 """
 import copy
@@ -17,10 +18,11 @@ import math
 import re
 from pathlib import Path
 
+from . import TRAJ_DEFAULTS, TRAJ_PRESET_KEYS
+
 # 默认轨迹来源: 内置 Cassini 预设 (cwd 相对, 依赖启动时 chdir 到运行根)。
 # 缺失/损坏即快速失败, 避免用残缺默认值静默跑出错误结果。
 DEFAULT_TRAJ_FILE = Path("presets/traj_evvejs_cassini.json")
-_TRAJ_KEYS = ("seq", "eras", "tof_bounds")
 
 
 def _load_default_traj():
@@ -28,42 +30,19 @@ def _load_default_traj():
         raw = json.loads(DEFAULT_TRAJ_FILE.read_text(encoding="utf-8"))
     except (OSError, ValueError) as e:
         raise RuntimeError(f"默认轨迹预设不可读: {DEFAULT_TRAJ_FILE}: {e}") from e
-    missing = [k for k in _TRAJ_KEYS if k not in raw]
+    missing = [k for k in TRAJ_PRESET_KEYS if k not in raw]
     if missing:
         raise RuntimeError(f"{DEFAULT_TRAJ_FILE} 缺少默认轨迹字段: {missing}")
-    return {k: raw[k] for k in _TRAJ_KEYS}
+    return {k: raw[k] for k in TRAJ_PRESET_KEYS}
 
 
 default_traj = _load_default_traj()
-
-# 唯一字段清单: 键顺序 = JSON 输出顺序; 可变值在实例化时深拷贝
-DEFAULTS = {
-    # --- 基本 ---
-    "name": "Cassini",
-    # --- 默认轨迹 (来自内置预设) ---
-    **default_traj,                          # seq / eras / tof_bounds
-    # --- 约束/边界 ---
-    "safe_radius": {},                       # TAG -> 半径 m (覆盖 planets 默认)
-    "vinf_bounds_kmps": [3.5, 6.0],
-    "eta_bounds": [0.01, 0.9],
-    "rp_ub": 30.0,                           # 全局飞掠 rp 上界 (pykep mga_1dsm 仅支持标量)
-    # --- 目标与罚函数 ---
-    "objective": "min_tof",                  # "min_tof" | "min_dsm" | "custom"
-    "objective_weights": [1.0, 0.0],         # custom: [TOF, DSM] 权重
-    "dsm_limit_ms": 1300.0,                  # m/s (硬核验阈值)
-    "penalty": [10.0, 0.2],                  # 默认 DSM 越界罚 (线性, 二次)
-    "frontier_penalty": [30.0, 2.0],         # 前沿阶段更强罚
-    "wl": 2e-5,                              # 发射 v∞ 超 5.0 km/s 罚 (m/s)
-    "vinf_launch_limit_ms": 5000.0,
-    "wa": 2e-5,                              # 到达 v∞ 超 9.0 km/s 罚 (m/s)
-    "vinf_arrival_limit_ms": 9000.0,
-}
 
 
 class TrajConfig(dict):
     def __init__(self):
         super().__init__()
-        dict.update(self, copy.deepcopy(DEFAULTS))
+        dict.update(self, copy.deepcopy({**TRAJ_DEFAULTS, **default_traj}))
 
     def __getattr__(self, name):
         try:
