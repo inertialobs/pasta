@@ -552,6 +552,16 @@ async function renderResult(jid) {
   try { r = await jfetch(`/api/jobs/${jid}/result.json`); }
   catch (e) { return; }
   const cards = $("summaryCards");
+  // 非 ok 结果 (如 no_candidates): 只报状态, 不渲染轨迹卡/表格/图
+  if (r.status && r.status !== "ok") {
+    cards.innerHTML = `<div class="card bad"><div class="k">状态</div>
+      <div class="v">${escapeHtml(r.status)}</div></div>
+      <div class="card wide"><div class="k">说明</div>
+      <div class="v">${escapeHtml(r.error || "无可行解，未生成轨迹")}</div></div>`;
+    $("legTable").innerHTML = ""; $("flybyTable").innerHTML = "";
+    $("chart").innerHTML = "<p>无可行解，无轨迹图</p>";
+    return;
+  }
   // 行1: 总飞行时间 (年+天合并) | 总 DSM | C3   (无独立 DSM 限制框)
   // 行2: 左 = 发射时间·出射v∞, 右 = 到达时间·入射v∞
   cards.innerHTML = `
