@@ -15,7 +15,7 @@
     # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
-    python main.py [--host 127.0.0.1] [--port 8765] [--jobs 8] [--no-browser]
+    python main.py [--host 127.0.0.1] [--port 8765] [--jobs 4] [--no-browser]
 
 系统配置:
     启动前先读取 pasta.settings.json (工作目录下), 命令行参数优先于文件;

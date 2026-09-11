@@ -2,7 +2,7 @@
 """
 唯一计算入口 (供 web JobManager 以子进程调用, 也可独立命令行使用):
 
-    python -m orbcalc.run_cli --config runs/<job>/config.json --jobs 8 --outdir runs/<job> [--debug]
+    python -m orbcalc.run_cli --config runs/<job>/config.json --jobs 4 --outdir runs/<job> [--debug]
 
 行为与 temp/EVVEJU_TOF_1DSM_mp.py 主流程逐位一致 (cfg 驱动):
     [1] 扫描 -> [2] 细化 (run_scan)   | [3] 弹道播种 (run_seed)
