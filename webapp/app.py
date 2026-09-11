@@ -221,16 +221,6 @@ class JobManager:
 
     # ------------------------------------------------------------------
     @staticmethod
-    def _read_tail(path: Path, n: int = 250) -> list[str]:
-        if not path.exists():
-            return []
-        try:
-            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-        except Exception:
-            return []
-        return lines[-n:]
-
-    @staticmethod
     def _disk_status(d: Path) -> str:
         # result.json 的 status 字段最权威; cancelled.txt 仅在无结果时作依据
         rf = d / "result.json"
@@ -261,7 +251,11 @@ class JobManager:
             except Exception:
                 cfg = {}
         # request.json 内容就是扁平 config (submit 时 json.dump(config_dict))
-        log_lines = self._read_tail(d / "log.txt")
+        try:
+            all_lines = (d / "log.txt").read_text(
+                encoding="utf-8", errors="replace").splitlines()
+        except Exception:
+            all_lines = []
         return {
             "job_id": jid,
             "name": cfg.get("name", jid),
@@ -271,8 +265,8 @@ class JobManager:
             "dir": str(d),
             "elapsed_s": None,
             "has_result": (d / "result.json").exists(),
-            "log_tail": log_lines,
-            "log_len": len(log_lines) if (d / "log.txt").exists() else 0,
+            "log_tail": all_lines[-250:],
+            "log_len": len(all_lines),
         }
 
     @staticmethod
