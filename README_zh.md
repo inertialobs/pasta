@@ -1,6 +1,6 @@
 # PASTA — Parallel Astrodynamic Solver for Trajectory Analysis
 
-[![License](https://img.shields.io/badge/License-GPL--v3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0.txt) [![Python](https://img.shields.io/badge/python-3.14-blue)](https://www.python.org/) [![Platform](https://img.shields.io/badge/platform-Windows%20x64-lightgrey)](https://www.microsoft.com/en-us/windows)
+[![License](https://img.shields.io/badge/License-GPL--v3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0.txt) [![Python](https://img.shields.io/badge/python-3.13%20%7C%203.14-blue)](https://www.python.org/) [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%28Debian%29%20x64-lightgrey)](https://www.microsoft.com/en-us/windows)
 并行天体动力轨道分析求解器：配置驱动的 MGA-1DSM 弹弓轨道优化 GUI 工具。
 
 - 前端：本地 Web 界面 (`http://127.0.0.1:8765`)
