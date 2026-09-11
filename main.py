@@ -39,6 +39,7 @@ import sys
 import threading
 import time
 import webbrowser
+from pathlib import Path
 
 from orbcalc import slog
 from settings import settings
@@ -56,6 +57,9 @@ def find_free_port(start: int, tries: int = 11) -> int:
 
 
 def main():
+    os.chdir(Path(sys.executable).resolve().parent
+         if getattr(sys, "frozen", False)
+         else Path(__file__).resolve().parent)
     if len(sys.argv) >= 2 and sys.argv[1] == "--cli":
         # 当以子进程模式启动的时候， 剥去--cli并传入run_cli.main()
         sys.argv = [sys.argv[0]] + (sys.argv[2:] if len(sys.argv) > 2 else [])

@@ -28,20 +28,11 @@ from orbcalc import slog
 from orbcalc.config import TrajConfig, sanitize_name
 from settings import CONFIG_FILE, settings
 
-# PyInstaller 冻结时:
-#   * 资源 (templates/static/内置 presets) 在 _MEIPASS 解包根;
-#   * 用户数据 (runs/presets) 与 exe 同目录 —— __file__ 在冻结环境指向
-#     _MEIPASS, 不能用它定位用户数据目录。
-if getattr(sys, "frozen", False):
-    PROJECT_ROOT = Path(sys.executable).resolve().parent
-    RESOURCE_ROOT = Path(getattr(sys, "_MEIPASS", PROJECT_ROOT))
-else:
-    PROJECT_ROOT = Path(__file__).resolve().parent.parent
-    RESOURCE_ROOT = PROJECT_ROOT
-
-RUNS_DIR = PROJECT_ROOT / "runs"
-PRESETS_DIR = PROJECT_ROOT / "presets"          # 用户预设 (可写)
-BUILTIN_PRESETS_DIR = RESOURCE_ROOT / "presets"  # 内置预设 (只读, 随包分发)
+# 运行根目录: main.py 启动时已 chdir 到此 (源码=项目根, 冻结=exe 目录)。
+# 资源 (webapp/presets) 与用户数据 (runs/presets) 同根。
+ROOT = Path.cwd()
+RUNS_DIR = ROOT / "runs"
+PRESETS_DIR = ROOT / "presets"          # 用户预设 (可写)
 for _d in (RUNS_DIR, PRESETS_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
@@ -146,8 +137,7 @@ class JobManager:
                    "--outdir", str(d)]
         job["log_f"] = log_f
         job["proc"] = subprocess.Popen(
-            cmd, cwd=str(PROJECT_ROOT),
-            stdout=log_f, stderr=log_f,
+            cmd, stdout=log_f, stderr=log_f,
             creationflags=CREATE_NO_WINDOW,
             start_new_session=(os.name != "nt"),   # POSIX: 独立进程组, 便于整树杀
         )
@@ -438,18 +428,17 @@ def _load_preset_dir(dirpath: Path, traj: dict) -> None:
 def load_presets() -> dict:
     """载入任务预设: 返回 {显示名: 轨迹字段子集}.
 
-    依次扫描 [内置目录, 用户目录], 同名时用户预设覆盖内置 (可改内置预设)。
+    预设与运行资源同根 (presets/), 随包分发、可被用户覆盖。
     """
     traj = {}
-    _load_preset_dir(BUILTIN_PRESETS_DIR, traj)
     _load_preset_dir(PRESETS_DIR, traj)
     return traj
 
 
 def create_app() -> Flask:
     app = Flask(__name__,
-                template_folder=str(RESOURCE_ROOT / "webapp" / "templates"),
-                static_folder=str(RESOURCE_ROOT / "webapp" / "static"))
+                template_folder=str(ROOT / "webapp" / "templates"),
+                static_folder=str(ROOT / "webapp" / "static"))
     app.config["DEFAULT_JOBS"] = None  # main.py --jobs 可设置默认并行度
     jm = JobManager(RUNS_DIR)
 

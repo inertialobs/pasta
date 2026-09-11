@@ -1,9 +1,12 @@
 # -*- coding: utf-8 -*-
 import os
 import json
+from pathlib import Path
 
-CONFIG_FILE="./pasta.settings.json"
-#不用管位置到底在哪里， 只要每次启动能统一就可以了
+# 相对路径, 在 load_file/save_file 调用时才解析 -> main.py 已 chdir 到运行根。
+# (不要在此处用 Path.cwd() 锚定: 本模块在 main() 之前就被 import, 那时还未 chdir)
+CONFIG_FILE = Path("pasta.settings.json")
+
 class Settings(dict):
     def __init__(self):
         super().__init__()
