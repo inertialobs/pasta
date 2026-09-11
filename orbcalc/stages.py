@@ -25,6 +25,8 @@ from .decode_report import decode
 def phase_scan_mp(executor, cfg, comp):
     """发射窗口粗扫: 每个窗口一轮 sade -> 并行任务."""
     step = float(comp["era_step_d"]) if comp["era_step_d"] is not None else 60.0
+    if step <= 0:
+        step = 60.0   # 防御: 非法步进会导致下面 while 死循环
     gen, pop, runs = 200, 24, 2
     slog.inf(f"[scan] step={step:.0f}d sade(gen={gen},pop={pop}) x{runs} [parallel]")
     ranges = cfg.era_mjd()

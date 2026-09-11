@@ -406,6 +406,11 @@ def _compute(config: dict, jobs_override=None) -> dict:
     c = {k: config.get(k, settings[k]) for k in COMPUTE_FIELDS}
     if jobs_override and jobs_override > 0:
         c["jobs"] = int(jobs_override)
+    # 计算字段在启动子进程前校验 (复用 Settings.validate; 非法 -> 由调用方回 400)
+    probe = type(settings)()
+    dict.update(probe, settings)
+    dict.update(probe, c)
+    probe.validate()
     return c
 
 
