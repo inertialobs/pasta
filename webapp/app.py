@@ -26,7 +26,7 @@ from flask import Flask, jsonify, render_template, request, send_from_directory
 
 from orbcalc import slog
 from orbcalc.config import TrajConfig, sanitize_name
-from settings import COMPUTE_FIELDS, CONFIG_FILE, settings
+from orbcalc.settings import COMPUTE_FIELDS, CONFIG_FILE, settings
 
 # 运行根目录: main.py 启动时已 chdir 到此 (源码=项目根, 冻结=exe 目录)。
 # 资源 (webapp/presets) 与用户数据 (runs/presets) 同根。

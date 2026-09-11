@@ -44,7 +44,7 @@ from .plot_data import build_plot_json, render_png
 from .stages import (phase_scan_mp, phase_refine_mp, phase_ballistic_seed_mp,
                      compress_pass_mp, pick_best, select_key)
 from . import slog
-from settings import COMPUTE_FIELDS, settings
+from orbcalc.settings import COMPUTE_FIELDS, settings
 
 
 def _force_utf8_stdio():

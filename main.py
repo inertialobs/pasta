@@ -42,7 +42,7 @@ import webbrowser
 from pathlib import Path
 
 from orbcalc import slog
-from settings import settings
+from orbcalc.settings import settings
 
 
 def find_free_port(start: int, tries: int = 11) -> int:
