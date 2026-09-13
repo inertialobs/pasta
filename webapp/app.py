@@ -67,8 +67,9 @@ class JobManager:
 
     MAX_RUNNING = 1
 
-    def __init__(self, runs_dir: Path):
+    def __init__(self, runs_dir: Path, config=None):
         self.runs_dir = Path(runs_dir)
+        self.config = config if config is not None else {}   # 共享 Flask app.config
         self.runs_dir.mkdir(parents=True, exist_ok=True)
         self._jobs: dict[str, dict] = {}
         self._queue: list[str] = []
@@ -125,17 +126,18 @@ class JobManager:
                 pass
         log_f = open(d / "log.txt", "a", encoding="utf-8", buffering=1)
         log_f.write(f"=== job {jid} started {time.time():.0f} ===\n")
+        extra = ["--debug"] if self.config.get("DEBUG_LOG") else []
         if getattr(sys, "frozen", False):
             # 冻结版无 python 解释器: 子进程 = 当前 exe 的 --cli 模式
             cmd = [sys.executable, "--cli",
                    "--config", str(d / "config.json"),
                    "--jobs", str(job["jobs"]),
-                   "--outdir", str(d)]
+                   "--outdir", str(d)] + extra
         else:
             cmd = [sys.executable, "-m", "orbcalc.run_cli",
                    "--config", str(d / "config.json"),
                    "--jobs", str(job["jobs"]),
-                   "--outdir", str(d)]
+                   "--outdir", str(d)] + extra
         job["log_f"] = log_f
         job["proc"] = subprocess.Popen(
             cmd, stdout=log_f, stderr=log_f,
@@ -446,7 +448,7 @@ def create_app() -> Flask:
                 template_folder=str(ROOT / "webapp" / "templates"),
                 static_folder=str(ROOT / "webapp" / "static"))
     app.config["DEFAULT_JOBS"] = None  # main.py --jobs 可设置默认并行度
-    jm = JobManager(RUNS_DIR)
+    jm = JobManager(RUNS_DIR, app.config)
 
     # ------------------------------------------------------------------
     @app.get("/")

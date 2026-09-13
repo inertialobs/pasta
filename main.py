@@ -25,7 +25,7 @@
     --port 0  -> 随机选空闲端口
     其他      -> 固定该端口; 被占用时视为已有实例, 直接打开其前端并退出
 """
-from _version import __version__
+from _version import __version__, alpha
 
 import bootstrap
 
@@ -71,6 +71,7 @@ def main():
     ap.add_argument("--port", type=int, default=None, help="端口 (默认取系统配置 8765; 0=随机空闲端口)")
     ap.add_argument("--jobs", type=int, default=None, help="默认并行进程数 (可被任务配置覆盖; 缺省用配置值)")
     ap.add_argument("--no-browser", action="store_true", help="不自动打开浏览器")
+    ap.add_argument("--debug", action="store_true", help="开启 DEBUG 日志 (含子进程 worker)")
     args = ap.parse_args()
 
     # 统一日志 (写 console, UTF-8)
@@ -80,7 +81,7 @@ def main():
                 _s.reconfigure(encoding="utf-8", errors="replace")
         except Exception:
             pass
-    slog.setup(stream=sys.stdout, debug=False)
+    slog.setup(stream=sys.stdout, debug=args.debug)
     slog.inf(f"[env] PASTA web | ver={__version__} | pid={os.getpid()} | "
              f"py={platform.python_version()} | os={platform.platform()} | cpu={os.cpu_count()}")
 
@@ -111,6 +112,8 @@ def main():
     from webapp.app import app
     if args.jobs:
         app.config["DEFAULT_JOBS"] = args.jobs
+    if args.debug or alpha:
+        app.config["DEBUG_LOG"] = True
 
     # ---- 端口策略 ----
     if port == 0:
