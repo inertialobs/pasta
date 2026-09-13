@@ -57,6 +57,12 @@ def _force_utf8_stdio():
             pass
 
 
+def _init_worker(debug=False):
+    """进程池 worker 初始化: 统一 UTF-8 stdio + slog 绑定 stderr (并传导 --debug)。"""
+    _force_utf8_stdio()
+    slog.setup(stream=sys.stderr, debug=debug)
+
+
 def _dump_env(cfg, comp):
     slog.inf(f"[env] PASTA run_cli | pid={os.getpid()} | py={platform.python_version()} | "
              f"os={platform.platform()} | cpu_cores={os.cpu_count()}")
@@ -102,7 +108,10 @@ def run(args):
 
         # 仅当存在并行阶段 (扫描/压缩) 时创建进程池, 纯评估任务零进程开销
         need_pool = comp["run_scan"] or comp["run_compress"] or comp["run_frontier"]
-        _ctx = ProcessPoolExecutor(max_workers=comp["jobs"]) if need_pool else nullcontext(None)
+        _ctx = (ProcessPoolExecutor(max_workers=comp["jobs"],
+                                    initializer=_init_worker,
+                                    initargs=(args.debug,))
+                if need_pool else nullcontext(None))
         with _ctx as ex:
             if comp["run_scan"]:
                 slog.inf("[phase] [1/6] scan 开始")
