@@ -19,6 +19,8 @@ orbcalc — 轨道弹道优化计算库 (配置驱动, 无任何 GUI/Web 依赖)
 默认值与字段集 (唯一来源):
     默认值即 schema —— 字段集由默认值字典的键派生, 不手写字段名。
 """
+import os
+
 __version__ = "0.1.0"
 
 # 轨迹字段: seq/eras/tof_bounds 的值来自预设 (运行时加载), 故仅登记键名
@@ -52,7 +54,7 @@ COMPUTE_DEFAULTS = {
     "scan_keep": 8,                          # 扫描阶段保留的窗口数
     "refine_keep": 6,                        # 细化阶段处理的候选窗口数
     "era_step_d": None,                      # None -> 搜索阶段默认步进
-    "jobs": 4,
+    "jobs": min(os.cpu_count() or 4, 256),    # 默认 = 总逻辑线程 (大小核/HT 由 OS 调度)
 }
 
 # 字段集 (由默认值键派生, 不手写)
