@@ -28,6 +28,7 @@ def phase_scan_mp(executor, cfg, comp):
     if step <= 0:
         step = 60.0   # 防御: 非法步进会导致下面 while 死循环
     gen, pop, runs = 200, 24, 2
+    half = step/2
     slog.inf(f"[scan] step={step:.0f}d sade(gen={gen},pop={pop}) x{runs} [parallel]")
     ranges = cfg.era_mjd()
     windows = []
@@ -43,7 +44,7 @@ def phase_scan_mp(executor, cfg, comp):
     for t in windows:
         for r in range(runs):
             futs.append((t, r, executor.submit(
-                _run_sade_task, "tof", cfg, [t - 30.0, t + 30.0], None, None, None,
+                _run_sade_task, "tof", cfg, [t - half, t + half], None, None, None,
                 gen, pop, r)))
     best_by_t = {}
     for t, r, fut in futs:
@@ -55,7 +56,7 @@ def phase_scan_mp(executor, cfg, comp):
         if t not in best_by_t:
             continue
         f, x = best_by_t[t]
-        udp = TOF_UDP(cfg, t0=[t - 30.0, t + 30.0])
+        udp = TOF_UDP(cfg, t0=[t - half, t + half])
         info = decode(x, udp.udp)
         results.append((f, t, x, info))
         slog.inf(f"  t0={pk.epoch(t).to_datetime().date()}  obj={f:9.0f} d  "
