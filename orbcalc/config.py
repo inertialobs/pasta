@@ -7,7 +7,7 @@ TrajConfig — 轨迹优化任务的完整配置 (JSON 可序列化, spawn 可 p
     - update(): 只接受已知字段, 先在候选副本上 validate, 通过后再提交;
     - DEFAULTS 为唯一字段清单与默认值, 每实例深拷贝 (可变默认值不共享)。
 
-只负责"轨迹"配置; 计算/系统参数 (jobs、run_*、scan_keep 等) 归 settings.py。
+只负责"轨迹"配置; 计算/系统参数 (jobs、run_*、scan_keep_pct 等) 归 settings.py。
 默认值与字段集集中定义在 orbcalc/__init__.py (TRAJ_DEFAULTS/TRAJ_FIELDS);
 默认轨迹 (seq/eras/tof_bounds) 取自内置预设 presets/traj_evvejs_cassini.json。
 """

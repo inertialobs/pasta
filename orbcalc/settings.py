@@ -47,9 +47,9 @@ class Settings(dict):
             raise ValueError(f"port 应为 0-65535 的整数, 实际 {self['port']}")
         if not (type(self["jobs"])==int and 1 <= self["jobs"] <= 256):
             raise ValueError(f"线程数应为 1-256 的整数, 实际 {self['jobs']}")
-        if ((type(self["scan_keep"]),type(self["refine_keep"]))!=(int,int)
-             or self["scan_keep"] < 1 or self["refine_keep"] < 1):
-            raise ValueError("scan_keep / refine_keep 应为正整数")
+        for k in ("scan_keep_pct", "refine_keep_pct"):
+            if type(self[k]) != int or not (1 <= self[k] <= 100):
+                raise ValueError(f"{k} 应为 1-100 的整数百分比, 实际 {self[k]!r}")
         if self["era_step_d"] is not None and (
                 type(self["era_step_d"]) not in (int, float) or self["era_step_d"] < 1):
             raise ValueError("era_step_d 应为 null 或 >= 1 天")

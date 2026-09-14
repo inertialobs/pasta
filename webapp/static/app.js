@@ -96,8 +96,10 @@ function fillCompForm(cfg) {
   $("cfgRunCompress").checked = cfg.run_compress !== false;
   $("cfgRunFrontier").checked = cfg.run_frontier !== false;
   $("cfgJobs").value = cfg.jobs || 4;
-  $("cfgScanKeep").value = cfg.scan_keep || 8;
-  $("cfgRefineKeep").value = cfg.refine_keep || 6;
+  $("cfgScanKeepPct").value = cfg.scan_keep_pct || 80;
+  $("cfgScanKeepPctOut").value = $("cfgScanKeepPct").value;
+  $("cfgRefineKeepPct").value = cfg.refine_keep_pct || 80;
+  $("cfgRefineKeepPctOut").value = $("cfgRefineKeepPct").value;
   $("cfgEraStep").value = cfg.era_step_d || 60;   // 搜索步进 (天)
   updateConfigJson();
 }
@@ -276,8 +278,8 @@ function collectConfig() {
     run_seed: $("cfgRunSeed").checked,
     run_compress: $("cfgRunCompress").checked,
     run_frontier: $("cfgRunFrontier").checked,
-    scan_keep: +$("cfgScanKeep").value,
-    refine_keep: +$("cfgRefineKeep").value,
+    scan_keep_pct: +$("cfgScanKeepPct").value,
+    refine_keep_pct: +$("cfgRefineKeepPct").value,
   };
   return obj;
 }
@@ -401,9 +403,13 @@ function updateConfigJson() {
 ["cfgName", "cfgDsmLimit", "cfgVinfL", "cfgVinfH",
  "cfgEtaL", "cfgEtaH", "cfgRpUb", "cfgJobs",
  "cfgRunScan", "cfgRunSeed", "cfgRunCompress", "cfgRunFrontier",
- "cfgScanKeep", "cfgRefineKeep", "cfgEraStep", "cfgWToF", "cfgWDsm",
+ "cfgScanKeepPct", "cfgRefineKeepPct", "cfgEraStep", "cfgWToF", "cfgWDsm",
  "cfgPenL1", "cfgPenL2", "cfgFPenL1", "cfgFPenL2"]
   .forEach(id => $(id).addEventListener("input", updateConfigJson));
+[["cfgScanKeepPct", "cfgScanKeepPctOut"], ["cfgRefineKeepPct", "cfgRefineKeepPctOut"]]
+  .forEach(([slider, out]) => $(slider).addEventListener("input", () => {
+    $(out).value = $(slider).value;
+  }));
 document.addEventListener("input", e => {
   if (e.target.closest("#tofTable") || e.target.closest("#eraTable")) updateConfigJson();
 });

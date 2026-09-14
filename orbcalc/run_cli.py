@@ -69,8 +69,8 @@ def _dump_env(cfg, comp):
     slog.inf(f"[env] seq={cfg.seq} | n_legs={len(cfg.seq) - 1} | objective={cfg.objective} | "
              f"dsm_limit={cfg.dsm_limit_ms:.0f} m/s | vinf_bounds={cfg.vinf_bounds_kmps}")
     slog.inf(f"[env] eras={cfg.eras} | tof_bounds={cfg.tof_bounds} | rp_ub={cfg.rp_ub}")
-    slog.inf(f"[env] jobs={comp['jobs']} | scan_keep={comp['scan_keep']} | "
-             f"refine_keep={comp['refine_keep']} | era_step_d={comp['era_step_d']}")
+    slog.inf(f"[env] jobs={comp['jobs']} | scan_keep_pct={comp['scan_keep_pct']} | "
+             f"refine_keep_pct={comp['refine_keep_pct']} | era_step_d={comp['era_step_d']}")
     slog.inf(f"[env] run: scan={comp['run_scan']} seed={comp['run_seed']} "
              f"compress={comp['run_compress']} frontier={comp['run_frontier']}")
     slog.inf(f"[env] penalty={cfg.penalty} | "

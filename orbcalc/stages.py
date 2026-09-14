@@ -22,6 +22,13 @@ from .udp import TOF_UDP, DSM_UDP
 from .decode_report import decode
 
 
+def _keep_n(pct, n):
+    """保留比例(%) -> 个数: 四舍五入, 至少 1, 至多 n。"""
+    if n <= 0:
+        return 0
+    return max(1, min(n, int(n * float(pct) / 100.0 + 0.5)))
+
+
 def phase_scan_mp(executor, cfg, comp):
     """发射窗口粗扫: 每个窗口一轮 sade -> 并行任务."""
     step = float(comp["era_step_d"]) if comp["era_step_d"] is not None else 60.0
@@ -63,21 +70,23 @@ def phase_scan_mp(executor, cfg, comp):
                  f"TOF={sum(info['tofs']):7.0f} d ({sum(info['tofs']) / 365.25:5.1f} yr)  "
                  f"DSM={info['dsm_total']:7.0f} m/s")
     results.sort(key=lambda r: r[0])
-    slog.inf(f"\n[scan] top {comp['scan_keep']} by objective:")
-    for f, t, x, info in results[:comp["scan_keep"]]:
+    k1 = _keep_n(comp["scan_keep_pct"], len(results))
+    slog.inf(f"\n[scan] top {k1}/{len(results)} ({comp['scan_keep_pct']}%) by objective:")
+    for f, t, x, info in results[:k1]:
         slog.inf(f"  t0={pk.epoch(t).to_datetime().date()}  TOF={sum(info['tofs']):.0f} d "
                  f"({sum(info['tofs']) / 365.25:.2f} yr)  DSM={info['dsm_total']:.0f} m/s")
-    return results[:comp["scan_keep"]]
+    return results[:k1]
 
 
 def phase_refine_mp(executor, cfg, comp, cands):
     """细化: 各窗口 sade 的 runs 并行; 局部级联串行; multistart 种子并行."""
     gen, pop, runs = 600, 40, 3
+    keep = _keep_n(comp["refine_keep_pct"], len(cands))
     best_overall = None
     # ---- 阶段 A: 全部窗口的 sade runs 并行 ----
     sade_best = {}
     futs = []
-    for rank, (f0, t0c, x0, info0) in enumerate(cands[:comp["refine_keep"]]):
+    for rank, (f0, t0c, x0, info0) in enumerate(cands[:keep]):
         tof_n = narrow_tof_box(x0, cfg, pct=0.15)
         sade_best[rank] = None
         for rr in range(runs):
@@ -89,7 +98,7 @@ def phase_refine_mp(executor, cfg, comp, cands):
         if f < 1e12 and (sade_best[rank] is None or f < sade_best[rank][0]):
             sade_best[rank] = (f, x)
     # ---- 阶段 B: 每窗口 局部级联(串行) + multistart(种子并行) ----
-    for rank, (f0, t0c, x0, info0) in enumerate(cands[:comp["refine_keep"]]):
+    for rank, (f0, t0c, x0, info0) in enumerate(cands[:keep]):
         tof_n = narrow_tof_box(x0, cfg, pct=0.15)
         sb = sade_best.get(rank)
         if sb is None:

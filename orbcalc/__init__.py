@@ -51,8 +51,8 @@ COMPUTE_DEFAULTS = {
     "run_seed": True,                        # [3] 弹道播种
     "run_compress": True,                    # [4] 宽 TOF 压缩
     "run_frontier": True,                    # [5] 紧 TOF 压缩
-    "scan_keep": 8,                          # 扫描阶段保留的窗口数
-    "refine_keep": 6,                        # 细化阶段处理的候选窗口数
+    "scan_keep_pct": 80,                     # 扫描阶段保留窗口的百分比 (1-100)
+    "refine_keep_pct": 80,                   # 细化阶段保留候选的百分比 (嵌套: 相对 scan 输出)
     "era_step_d": None,                      # None -> 搜索阶段默认步进
     "jobs": min(os.cpu_count() or 4, 256),    # 默认 = 总逻辑线程 (大小核/HT 由 OS 调度)
 }
