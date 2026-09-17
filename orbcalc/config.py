@@ -12,13 +12,13 @@ TrajConfig — 轨迹优化任务的完整配置 (JSON 可序列化, spawn 可 p
 默认轨迹 (seq/eras/tof_bounds) 取自内置预设 presets/traj_evvejs_cassini.json。
 """
 import copy
-import datetime
 import json
 import math
 import re
 from pathlib import Path
 
 from . import TRAJ_DEFAULTS, TRAJ_PRESET_KEYS
+from .eras import EraSet
 
 # 默认轨迹来源: 内置 Cassini 预设 (cwd 相对, 依赖启动时 chdir 到运行根)。
 # 缺失/损坏即快速失败, 避免用残缺默认值静默跑出错误结果。
@@ -103,23 +103,7 @@ class TrajConfig(dict):
             raise ValueError(f"objective 应为 min_tof/min_dsm/custom, 实际 {self.objective}")
         if self.objective == "custom" and len(self.objective_weights) != 2:
             raise ValueError(f"objective_weights 应为 [TOF权重, DSM权重], 实际 {self.objective_weights}")
-        # de440s 星历覆盖约 1849-2150 (MJD2000 约 ±54820); 范围外所有窗口都会失败
-        EPH_LO, EPH_HI = -54000.0, 54000.0
-        _epoch0 = datetime.date(2000, 1, 1)
-        for e in self.eras:
-            if len(e) != 2 or not e[0] or not e[1]:
-                raise ValueError(f"era 应为 [start, end], 实际 {e}")
-            for label, s in (("start", e[0]), ("end", e[1])):
-                try:
-                    d = datetime.date.fromisoformat(s)
-                except (TypeError, ValueError):
-                    raise ValueError(f"era {label} 日期格式应为 YYYY-MM-DD, 实际 {s!r}")
-                mjd = float((d - _epoch0).days)
-                if not (EPH_LO <= mjd <= EPH_HI):
-                    raise ValueError(
-                        f"era {label} 超出 de440s 星历范围 (1849-2150): {s}")
-            if e[0] > e[1]:
-                raise ValueError(f"era start > end, 实际: {e}")
+        EraSet.from_dates(self.eras)   # 解析+校验 (格式/顺序/星历范围)
         return True
 
     # ------------------------------------------------------------------
@@ -152,10 +136,10 @@ class TrajConfig(dict):
                 text = f.read()
         return cls.from_dict(json.loads(text))
 
-    def era_mjd(self):
-        """时代窗口 (MJD2000 对) — 供 stages 使用."""
-        import pykep as pk
-        return [[pk.epoch(s).mjd2000, pk.epoch(e).mjd2000] for s, e in self.eras]
+    @property
+    def era_set(self) -> EraSet:
+        """发射窗口集合 (解析/求交/窗口生成) — 供 stages 使用。"""
+        return EraSet.from_dates(self.eras)
 
 
 def _num(v):

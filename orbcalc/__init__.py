@@ -8,6 +8,7 @@ orbcalc — 轨道弹道优化计算库 (配置驱动, 无任何 GUI/Web 依赖)
 
 模块:
     config       TrajConfig (dict 子类) + 预设 + JSON 读写
+    eras         发射窗口集合 EraSet (解析/校验/求交/窗口生成)
     planets      行星混合模型 (de440s 星历 + JPL 物理参数) + 注册表
     udp          TOF_UDP / DSM_UDP (pykep.trajopt.mga_1dsm 封装)
     engines      优化引擎: sade / nlopt(sbplx,cobyla) / compass / xnes / 并行任务
