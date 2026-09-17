@@ -13,12 +13,12 @@ TrajConfig — 轨迹优化任务的完整配置 (JSON 可序列化, spawn 可 p
 """
 import copy
 import json
-import math
 import re
 from pathlib import Path
 
 from . import TRAJ_DEFAULTS, TRAJ_PRESET_KEYS
 from .eras import EraSet
+from .util import is_num
 
 # 默认轨迹来源: 内置 Cassini 预设 (cwd 相对, 依赖启动时 chdir 到运行根)。
 # 缺失/损坏即快速失败, 避免用残缺默认值静默跑出错误结果。
@@ -70,34 +70,34 @@ class TrajConfig(dict):
             raise ValueError(f"tof_bounds 应有 {n_legs} 条腿, 实际 {len(self.tof_bounds)}")
         for i, b in enumerate(self.tof_bounds):
             if (not isinstance(b, (list, tuple)) or len(b) != 2
-                    or not _num(b[0]) or not _num(b[1])):
+                    or not is_num(b[0]) or not is_num(b[1])):
                 raise ValueError(f"tof_bounds[{i}] 应为 [lo, hi] 数值, 实际 {b}")
             if b[0] > b[1]:
                 raise ValueError(f"tof_bounds[{i}] lo > hi, 实际 {b}")
-        if not (_num(self.rp_ub) and self.rp_ub > 0):
+        if not (is_num(self.rp_ub) and self.rp_ub > 0):
             raise ValueError(f"rp_ub 应为正数, 实际 {self.rp_ub}")
         if (not isinstance(self.vinf_bounds_kmps, (list, tuple))
                 or len(self.vinf_bounds_kmps) != 2
-                or not all(_num(v) for v in self.vinf_bounds_kmps)):
+                or not all(is_num(v) for v in self.vinf_bounds_kmps)):
             raise ValueError(f"vinf_bounds_kmps 应为 [lo, hi] 两个数值, 实际 {self.vinf_bounds_kmps}")
         if self.vinf_bounds_kmps[0] > self.vinf_bounds_kmps[1]:
             raise ValueError(f"vinf_bounds_kmps lo > hi, 实际 {self.vinf_bounds_kmps}")
         if (not isinstance(self.eta_bounds, (list, tuple)) or len(self.eta_bounds) != 2
-                or not all(_num(v) for v in self.eta_bounds)
+                or not all(is_num(v) for v in self.eta_bounds)
                 or not (0 < self.eta_bounds[0] <= self.eta_bounds[1] <= 1)):
             raise ValueError(f"eta_bounds 应为 0 < lo <= hi <= 1, 实际 {self.eta_bounds}")
         for fname in ("penalty", "frontier_penalty"):
             v = self[fname]
             if (not isinstance(v, (list, tuple)) or len(v) != 2
-                    or not all(_num(x) and x >= 0 for x in v)):
+                    or not all(is_num(x) and x >= 0 for x in v)):
                 raise ValueError(f"{fname} 应为 [线性权, 二次权] 两个非负数值, 实际 {v}")
         for fname in ("dsm_limit_ms", "wl", "wa",
                       "vinf_launch_limit_ms", "vinf_arrival_limit_ms"):
             v = self[fname]
-            if not (_num(v) and v >= 0):
+            if not (is_num(v) and v >= 0):
                 raise ValueError(f"{fname} 应为非负数值, 实际 {v}")
         for k, v in self.safe_radius.items():
-            if not (_num(v) and v > 0):
+            if not (is_num(v) and v > 0):
                 raise ValueError(f"safe_radius[{k}] 应为正数 (m), 实际 {v!r}")
         if self.objective not in ("min_tof", "min_dsm", "custom"):
             raise ValueError(f"objective 应为 min_tof/min_dsm/custom, 实际 {self.objective}")
@@ -140,13 +140,6 @@ class TrajConfig(dict):
     def era_set(self) -> EraSet:
         """发射窗口集合 (解析/求交/窗口生成) — 供 stages 使用。"""
         return EraSet.from_dates(self.eras)
-
-
-def _num(v):
-    """数值判定 (bool 除外, 排除 NaN/Inf; 超大 int 视为有限)."""
-    if isinstance(v, bool):
-        return False
-    return isinstance(v, int) or (isinstance(v, float) and math.isfinite(v))
 
 
 def sanitize_name(name):

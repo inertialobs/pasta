@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 
 from . import COMPUTE_DEFAULTS, SYS_DEFAULTS, COMPUTE_FIELDS
+from .util import is_num
 
 CONFIG_FILE = Path("pasta.settings.json")
 
@@ -43,18 +44,21 @@ class Settings(dict):
         '''validate settings'''
         if not self["host"]:
             raise ValueError("host 不能为空")
-        if not (type(self["port"])==int and 0 <= self["port"] <= 65535):
+        if not (is_num(self["port"]) and isinstance(self["port"], int)
+                and 0 <= self["port"] <= 65535):
             raise ValueError(f"port 应为 0-65535 的整数, 实际 {self['port']}")
-        if not (type(self["jobs"])==int and 1 <= self["jobs"] <= 256):
+        if not (is_num(self["jobs"]) and isinstance(self["jobs"], int)
+                and 1 <= self["jobs"] <= 256):
             raise ValueError(f"线程数应为 1-256 的整数, 实际 {self['jobs']}")
         for k in ("scan_keep_pct", "refine_keep_pct"):
-            if type(self[k]) != int or not (1 <= self[k] <= 100):
+            if not (is_num(self[k]) and isinstance(self[k], int)
+                    and 1 <= self[k] <= 100):
                 raise ValueError(f"{k} 应为 1-100 的整数百分比, 实际 {self[k]!r}")
-        if type(self["era_step_d"]) not in (int, float) or self["era_step_d"] < 1:
+        if not (is_num(self["era_step_d"]) and self["era_step_d"] >= 1):
             raise ValueError("era_step_d 应 >= 1 天")
         cov = self["t0_coverage"]
         if (not isinstance(cov, list) or not cov or len(cov) < 5
-                or any(type(i) not in (int, float) or not (0 < i <= 1) for i in cov)):
+                or any(not (is_num(i) and 0 < i <= 1) for i in cov)):
             raise ValueError(f"t0_coverage 应为5项非空列表, 每项 0<i<=1, 实际 {cov!r}")
         return True
 
