@@ -50,9 +50,12 @@ class Settings(dict):
         for k in ("scan_keep_pct", "refine_keep_pct"):
             if type(self[k]) != int or not (1 <= self[k] <= 100):
                 raise ValueError(f"{k} 应为 1-100 的整数百分比, 实际 {self[k]!r}")
-        if self["era_step_d"] is not None and (
-                type(self["era_step_d"]) not in (int, float) or self["era_step_d"] < 1):
-            raise ValueError("era_step_d 应为 null 或 >= 1 天")
+        if type(self["era_step_d"]) not in (int, float) or self["era_step_d"] < 1:
+            raise ValueError("era_step_d 应 >= 1 天")
+        cov = self["t0_coverage"]
+        if (not isinstance(cov, list) or not cov or len(cov) < 5
+                or any(type(i) not in (int, float) or not (0 < i <= 1) for i in cov)):
+            raise ValueError(f"t0_coverage 应为5项非空列表, 每项 0<i<=1, 实际 {cov!r}")
         return True
 
     def update(self, d:dict):

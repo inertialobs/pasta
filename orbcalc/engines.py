@@ -118,7 +118,7 @@ def _sbplx_task(kind, cfg, t0, tof, w1, w2, x0, maxeval):
         return 1e18, list(x0)
 
 
-def multistart_mp(executor, kind, cfg, t0, tof, w1, w2, x_ref, n_seeds=60,
+def multistart_mp(executor, kind, cfg, half, t0, tof, w1, w2, x_ref, n_seeds=60,
                   maxeval=1500, seed=7, pct=0.12):
     """窄盒内多起点局部搜索 (并行版): 种子 0 = 参考解本身, 保证单调不减.
     起点生成方式与串行版逐位一致 (同一 rng 序列), 各起点 sbplx 并行."""
@@ -131,7 +131,7 @@ def multistart_mp(executor, kind, cfg, t0, tof, w1, w2, x_ref, n_seeds=60,
     lo = np.maximum(lb, xr - width)
     hi = np.minimum(ub, xr + width)
     lo = np.minimum(lo, hi - 1e-7 * span - 1e-9)
-    lo[0], hi[0] = max(lb[0], xr[0] - 10.0), min(ub[0], xr[0] + 10.0)
+    lo[0], hi[0] = max(lb[0], xr[0] - half), min(ub[0], xr[0] + half)
     if lo[0] >= hi[0]:
         lo[0], hi[0] = lb[0], ub[0]
     starts = [xr] + [rng.uniform(lo, hi) for _ in range(n_seeds - 1)]
