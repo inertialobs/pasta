@@ -230,11 +230,10 @@ function buildEraTable(eras) {
   const arr = (eras && eras.length) ? eras : [["2029-01-01", "2033-06-30"]];
   const eb = $("eraTable");
   eb.innerHTML = "";
-  arr.forEach(([a, b], i) => {
+  arr.forEach(([a, b]) => {
     const row = document.createElement("div");
     row.className = "era-row";
-    row.innerHTML = `<label>窗口 ${i + 1}</label>
-      <input data-k="a" type="date" value="${a}">
+    row.innerHTML = `<input data-k="a" type="date" value="${a}">
       <span>→</span>
       <input data-k="b" type="date" value="${b}">
       <button class="era-del" title="删除窗口" ${arr.length <= 1 ? "disabled" : ""}>✕</button>`;
@@ -337,9 +336,6 @@ $("eraTable").addEventListener("click", (e) => {
   const rows = [...document.querySelectorAll("#eraTable .era-row")];
   if (rows.length <= 1) return;
   btn.closest(".era-row").remove();
-  [...document.querySelectorAll("#eraTable .era-row")].forEach((r, i) => {
-    r.querySelector("label").textContent = `窗口 ${i + 1}`;
-  });
   const delBtns = [...document.querySelectorAll("#eraTable .era-del")];
   if (delBtns.length === 1) delBtns[0].disabled = true;
   updateConfigJson();

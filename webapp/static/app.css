@@ -122,7 +122,6 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 /* ---------- 发射窗口表 (每行一个窗口, 不换行) ---------- */
 .era-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; flex-wrap: nowrap; }
 .era-row .era-sp { color: var(--dim); }
-.era-row label { width: 70px; font-size: 12.5px; color: var(--dim); flex-shrink: 0; }
 .era-row input[type="date"] { width: 150px; background: #0c121f; color: var(--txt);
   border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font-size: 13px; }
 .era-del { border: 0; background: transparent; color: var(--bad); cursor: pointer;
