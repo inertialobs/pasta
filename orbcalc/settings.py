@@ -4,7 +4,7 @@ import json
 import os
 from pathlib import Path
 
-from . import COMPUTE_DEFAULTS, SYS_DEFAULTS
+from . import COMPUTE_DEFAULTS, SYS_DEFAULTS, COMPUTE_FIELDS
 
 CONFIG_FILE = Path("pasta.settings.json")
 
@@ -69,3 +69,15 @@ class Settings(dict):
         dict.update(self, patch)
 
 settings = Settings()
+
+
+def resolve_compute(config: dict, jobs: int | None = None) -> dict:
+    """任务 config -> COMPUTE 字段 (缺省回退全局 settings) + jobs 覆盖 + 校验。"""
+    c = {k: config.get(k, settings[k]) for k in COMPUTE_FIELDS}
+    if jobs and jobs > 0:
+        c["jobs"] = int(jobs)
+    probe = Settings()
+    dict.update(probe, settings)
+    dict.update(probe, c)
+    probe.validate()
+    return c

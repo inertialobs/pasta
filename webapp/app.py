@@ -26,7 +26,7 @@ from flask import Flask, jsonify, render_template, request, send_from_directory
 
 from orbcalc import COMPUTE_FIELDS, SYS_FIELDS, TRAJ_FIELDS, slog
 from orbcalc.config import TrajConfig, sanitize_name
-from orbcalc.settings import CONFIG_FILE, settings
+from orbcalc.settings import CONFIG_FILE, settings, resolve_compute
 
 # 运行根目录: main.py 启动时已 chdir 到此 (源码=项目根, 冻结=exe 目录)。
 # 资源 (webapp/presets) 与用户数据 (runs/presets) 同根。
@@ -82,7 +82,7 @@ class JobManager:
     def submit(self, config_dict: dict, jobs_override: int | None = None) -> str:
         cfg = TrajConfig.from_dict(config_dict)
         cfg.validate()
-        comp = _compute(config_dict, jobs_override)
+        comp = resolve_compute(config_dict, jobs_override)
         job_cfg = {**dict(cfg), **comp}   # 轨迹 + 计算快照, 供 run_cli 读取
         with self._lock:
             # 同秒同名也要唯一: 目录已存在/内存已有则追加序号 (加锁内完成, 防并发)
@@ -400,19 +400,6 @@ def _subdict(d: dict, fields: set) -> dict:
     return {k: v for k, v in d.items() if k in fields}
 
 
-def _compute(config: dict, jobs_override=None) -> dict:
-    """任务计算字段: 取 config 中的计算键, 缺省回退全局 settings; 再套 jobs 覆盖."""
-    c = {k: config.get(k, settings[k]) for k in COMPUTE_FIELDS}
-    if jobs_override and jobs_override > 0:
-        c["jobs"] = int(jobs_override)
-    # 计算字段在启动子进程前校验 (复用 Settings.validate; 非法 -> 由调用方回 400)
-    probe = type(settings)()
-    dict.update(probe, settings)
-    dict.update(probe, c)
-    probe.validate()
-    return c
-
-
 def _load_preset_dir(dirpath: Path, traj: dict) -> None:
     """扫描目录里的任务预设 JSON 并就地并入 traj.
 
@@ -547,7 +534,7 @@ def create_app() -> Flask:
             return jsonify({"error": str(e)}), 400
         # 全局计算配置: 每次提交后自动更新 (重启后恢复上次提交的计算设置)
         try:
-            settings.update(_compute(cfg, jobs_override))
+            settings.update(resolve_compute(cfg, jobs_override))
             settings.save_file()
         except Exception:
             pass  # 配置保存失败不影响任务提交

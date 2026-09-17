@@ -44,8 +44,7 @@ from .plot_data import build_plot_json, render_png
 from .stages import (phase_scan_mp, phase_refine_mp, phase_ballistic_seed_mp,
                      compress_pass_mp, pick_best, select_key)
 from . import slog
-from . import COMPUTE_FIELDS
-from .settings import settings
+from .settings import settings, resolve_compute
 
 
 def _force_utf8_stdio():
@@ -81,9 +80,7 @@ def _load(args):
     """读任务 JSON: 轨迹 -> TrajConfig, 计算 -> comp (缺省回退 settings 默认)."""
     data = json.loads(Path(args.config).read_text(encoding="utf-8"))
     cfg = TrajConfig.from_dict(data)
-    comp = {k: data.get(k, settings[k]) for k in COMPUTE_FIELDS}
-    if args.jobs and args.jobs > 0:
-        comp["jobs"] = int(args.jobs)
+    comp = resolve_compute(data, args.jobs)
     cfg.validate()
     return cfg, comp
 
