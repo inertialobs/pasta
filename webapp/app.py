@@ -39,6 +39,14 @@ PRESETS_DIR = ROOT / "presets"          # 用户预设 (可写)
 for _d in (RUNS_DIR, PRESETS_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
+
+def _job_dir(jid: str) -> Path | None:
+    """jid -> 合法的 runs/<jid>; 含分隔符/穿越/逃逸时返回 None。"""
+    base = RUNS_DIR.resolve()
+    p = (base / jid).resolve()
+    return p if p.parent == base else None
+
+
 CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
 
@@ -601,6 +609,8 @@ def create_app() -> Flask:
 
     @app.get("/api/jobs/<jid>")
     def job_status(jid):
+        if _job_dir(jid) is None:
+            return jsonify({"error": "not found"}), 404
         info = jm.get(jid)
         if info is None:
             return jsonify({"error": "not found"}), 404
@@ -608,6 +618,8 @@ def create_app() -> Flask:
 
     @app.post("/api/jobs/<jid>/cancel")
     def cancel_job(jid):
+        if _job_dir(jid) is None:
+            return jsonify({"error": "not found"}), 404
         ok = jm.cancel(jid)
         if not ok:
             return jsonify({"error": "not found"}), 404
@@ -615,6 +627,8 @@ def create_app() -> Flask:
 
     @app.delete("/api/jobs/<jid>")
     def delete_job(jid):
+        if _job_dir(jid) is None:
+            return jsonify({"error": "not found"}), 404
         ok = jm.delete(jid)
         if not ok:
             return jsonify({"error": "not found"}), 404
@@ -626,7 +640,9 @@ def create_app() -> Flask:
         if artifact not in ("result.json", "plot.json", "best_x.npy",
                             "trajectory.png", "config.json", "log.txt"):
             return jsonify({"error": "bad artifact"}), 400
-        d = Path(RUNS_DIR) / jid
+        d = _job_dir(jid)
+        if d is None:
+            return jsonify({"error": "not found"}), 404
         f = d / artifact
         if not f.exists():
             return jsonify({"error": "artifact not ready"}), 404
