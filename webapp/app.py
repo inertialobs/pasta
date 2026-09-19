@@ -28,7 +28,8 @@ from orbcalc import COMPUTE_FIELDS, SYS_FIELDS, TRAJ_FIELDS, slog
 from orbcalc.config import TrajConfig, sanitize_name
 from orbcalc.settings import CONFIG_FILE, settings, resolve_compute
 
-from _version import __version__, commit, dirty, build_time
+from _version import (__version__, commit, commit_full, commit_date,
+                      commit_subject, dirty, build_time, describe)
 
 # 运行根目录: main.py 启动时已 chdir 到此 (源码=项目根, 冻结=exe 目录)。
 # 资源 (webapp/presets) 与用户数据 (runs/presets) 同根。
@@ -448,12 +449,62 @@ def create_app() -> Flask:
     def health():
         import pykep
         host = settings["host"]
-        return jsonify({"ok": True, "version": __version__, "commit": commit,
-                        "dirty": dirty, "build_time": build_time,
+        return jsonify({"ok": True, "version": __version__, "describe": describe(),
+                        "commit": commit, "dirty": dirty, "build_time": build_time,
                         "pykep": pykep.__version__,
                         "runs_dir": str(RUNS_DIR),
                         "host": host, "port": settings["port"],
                         "lan": host in ("0.0.0.0", "::")})
+
+    @app.get("/api/about")
+    def about():
+        """关于页数据: 应用/构建/运行环境 + 许可全文 (LICENSE / ThirdPartyNotice.md)。"""
+        import platform
+        import sys
+        import pykep
+        try:
+            import pygmo
+            pygmo_ver = pygmo.__version__
+        except Exception:
+            pygmo_ver = None
+        try:
+            import numpy
+            numpy_ver = numpy.__version__
+        except Exception:
+            numpy_ver = None
+
+        def _read(name):
+            try:
+                return (ROOT / name).read_text(encoding="utf-8")
+            except Exception:
+                return None
+
+        return jsonify({
+            "name": "PASTA",
+            "full_name": "Parallel Astrodynamic Solver for Trajectory Analysis",
+            "version": __version__,
+            "describe": describe(),
+            "commit": commit,
+            "commit_full": commit_full,
+            "commit_date": commit_date,
+            "commit_subject": commit_subject,
+            "dirty": dirty,
+            "build_time": build_time,
+            "license": "GPL-3.0-or-later",
+            "copyright": "Copyright (C) 2026 Inertial",
+            "repo": "https://github.com/inertialobs/pasta",
+            "releases": "https://github.com/inertialobs/pasta/releases",
+            "runtime": {
+                "python": sys.version.split()[0],
+                "platform": platform.platform(),
+                "frozen": bool(getattr(sys, "frozen", False)),
+                "pykep": pykep.__version__,
+                "pygmo": pygmo_ver,
+                "numpy": numpy_ver,
+            },
+            "license_text": _read("LICENSE"),
+            "thirdparty_text": _read("ThirdPartyNotice.md"),
+        })
 
     @app.get("/api/sysconfig")
     def get_sysconfig():

@@ -184,7 +184,7 @@ td input { width: 58px; background: #0c121f; color: var(--txt);
 
 #chart { margin-top: 10px; }
 
-/* ---------- 系统设置弹窗 ---------- */
+/* ---------- 系统设置 / 关于 弹窗 ---------- */
 .modal { position: fixed; inset: 0; background: rgba(5, 8, 16, .62); display: flex;
          align-items: center; justify-content: center; z-index: 50; }
 .modal-box { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
@@ -192,3 +192,32 @@ td input { width: 58px; background: #0c121f; color: var(--txt);
 .modal-box h3 { margin: 0 0 12px; font-size: 15px; color: var(--acc); }
 .modal-box .field label { width: 140px; }
 .modal-box .banner { margin-top: 10px; }
+
+/* 带左侧导航的放大弹窗 (系统设置 / 关于) */
+.modal-box.paneled { width: 860px; max-width: 94vw; height: 80vh; display: flex;
+                     padding: 0; overflow: hidden; }
+.modal-side { width: 168px; flex-shrink: 0; background: #10182a;
+              border-right: 1px solid var(--line); padding: 14px 8px;
+              display: flex; flex-direction: column; gap: 4px; }
+.side-item { text-align: left; border: 0; background: transparent; border-radius: 6px; }
+.side-item.active { background: #1a2742; color: var(--acc); font-weight: 600; }
+.modal-body { flex: 1; padding: 16px 20px; overflow: auto; }
+.mpane { display: none; }
+.mpane.active { display: block; }
+
+/* 关于面板 */
+.about-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 8px 0; }
+.about-item { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+.about-item .k { font-size: 11px; color: var(--dim); }
+.about-item .v { font-size: 13px; font-weight: 600; margin-top: 2px; word-break: break-all; }
+.about-item .v.ok { color: var(--ok); }
+.about-item .v.bad { color: var(--bad); }
+#mpaneAbout details { border: 1px solid var(--line); border-radius: 8px; margin: 8px 0; padding: 8px 10px; }
+#mpaneAbout summary { cursor: pointer; font-size: 13px; color: var(--acc); user-select: none; }
+.about-pre { max-height: 300px; overflow: auto; font-family: Consolas, monospace;
+             font-size: 11.5px; white-space: pre-wrap; background: #0c121f;
+             border: 1px solid var(--line); border-radius: 6px; padding: 8px; margin: 8px 0 0; }
+.disclaimer { font-size: 11.5px; color: var(--dim); border-left: 3px solid var(--acc);
+              padding: 4px 0 4px 10px; }
+.disclaimer p { margin: 6px 0; }
+.disclaimer a { color: var(--acc); }

@@ -13,6 +13,7 @@
   <!-- <div id="closeHint" class="banner hint hidden">关闭本标签页 = 后端后台继续运行；要停止后端请点右上角「⏹ 终止程序」。</div> -->
   <div class="header-actions">
     <button id="sysOpen" class="ghost">系统设置</button>
+    <button id="aboutOpen" class="ghost">关于</button>
     <button id="shutdownBtn" class="ghost danger">⏹ 终止程序</button>
   </div>
   <span id="sysInfo" class="sys-info"></span>
@@ -149,23 +150,73 @@
   </section>
 </main>
 
-<!-- 系统设置弹窗 -->
+<!-- 系统设置 / 关于 弹窗 (左侧导航切换) -->
 <div id="sysModal" class="modal hidden">
-  <div class="modal-box">
-    <h3>系统设置 (重启后生效)</h3>
-    <div id="sysLanWarnBanner" class="banner warn hidden">⚠ 监听 0.0.0.0：局域网内任何设备可访问且本工具无鉴权 — 仅限安全内网使用！</div>
-    <div class="checks">
-      <label><input type="checkbox" id="sysLan"> 开放到局域网 (监听 0.0.0.0)</label>
-      <p class="hint">选此项后 127.0.0.1 不再可用，任何局域网设备都能访问本页面。保存时会再次提示风险。</p>
-    </div>
-    <div class="field"><label>端口 port</label><input id="sysPort" type="number" value="8765" min="0" max="65535"></div>
-    <div class="checks">
-      <label><input type="checkbox" id="sysOpenBrowser"> 启动时自动打开浏览器</label>
-    </div>
-    <p class="hint">port=0 表示随机空闲端口。改动保存后需重启程序生效。</p>
-    <div class="actions">
-      <button id="sysSave" class="primary">保存</button>
-      <button id="sysClose" class="ghost">取消</button>
+  <div class="modal-box paneled">
+    <aside class="modal-side">
+      <button class="side-item active" data-pane="settings">系统设置</button>
+      <button class="side-item" data-pane="about">关于</button>
+    </aside>
+    <div class="modal-body">
+      <!-- ---- 系统设置 ---- -->
+      <div id="mpaneSettings" class="mpane active">
+        <h3>系统设置 (重启后生效)</h3>
+        <div id="sysLanWarnBanner" class="banner warn hidden">⚠ 监听 0.0.0.0：局域网内任何设备可访问且本工具无鉴权 — 仅限安全内网使用！</div>
+        <div class="checks">
+          <label><input type="checkbox" id="sysLan"> 开放到局域网 (监听 0.0.0.0)</label>
+          <p class="hint">选此项后 127.0.0.1 不再可用，任何局域网设备都能访问本页面。保存时会再次提示风险。</p>
+        </div>
+        <div class="field"><label>端口 port</label><input id="sysPort" type="number" value="8765" min="0" max="65535"></div>
+        <div class="checks">
+          <label><input type="checkbox" id="sysOpenBrowser"> 启动时自动打开浏览器</label>
+        </div>
+        <p class="hint">port=0 表示随机空闲端口。改动保存后需重启程序生效。</p>
+        <div class="actions">
+          <button id="sysSave" class="primary">保存</button>
+          <button id="sysClose" class="ghost">取消</button>
+        </div>
+      </div>
+
+      <!-- ---- 关于 ---- -->
+      <div id="mpaneAbout" class="mpane">
+        <h3>关于 PASTA</h3>
+        <p class="sub">Parallel Astrodynamic Solver for Trajectory Analysis 并行天体动力轨道分析求解器</p>
+        <div id="aboutMeta" class="about-grid"></div>
+        <details open>
+          <summary>运行环境</summary>
+          <div id="aboutRuntime" class="about-grid"></div>
+        </details>
+        <details open>
+          <summary>免责声明 / Disclaimer</summary>
+          <div id="aboutDisclaimer" class="disclaimer">
+            <p>Copyright (C) 2026 Inertial</p>
+            <p>This program is free software: you can redistribute it and/or modify
+               it under the terms of the GNU General Public License as published by
+               the Free Software Foundation, either version 3 of the License, or
+               (at your option) any later version.</p>
+            <p>This program is distributed in the hope that it will be useful,
+               but <b>WITHOUT ANY WARRANTY</b>; without even the implied warranty of
+               <b>MERCHANTABILITY</b> or <b>FITNESS FOR A PARTICULAR PURPOSE</b>.
+               See the GNU General Public License for more details.</p>
+            <p>You should have received a copy of the GNU General Public License
+               along with this program. If not, see
+               <a href="https://www.gnu.org/licenses/" target="_blank" rel="noopener">https://www.gnu.org/licenses/</a>.</p>
+          </div>
+        </details>
+        <details>
+          <summary>开源许可 (GPL-3.0)</summary>
+          <pre id="aboutLicense" class="about-pre"></pre>
+        </details>
+        <details>
+          <summary>第三方组件许可</summary>
+          <pre id="aboutThirdParty" class="about-pre"></pre>
+        </details>
+        <div class="actions">
+          <button id="aboutRepo" class="ghost">项目主页</button>
+          <button id="aboutReleases" class="ghost">发布页</button>
+          <button id="aboutClose" class="primary">关闭</button>
+        </div>
+      </div>
     </div>
   </div>
 </div>

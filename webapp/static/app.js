@@ -704,7 +704,15 @@ window.addEventListener("beforeunload", (e) => {
   }
 });
 
-/* 系统设置 */
+/* 系统设置 / 关于 (同一弹窗, 左侧导航切换) */
+function showModalPane(pane) {
+  document.querySelectorAll("#sysModal .side-item").forEach(b =>
+    b.classList.toggle("active", b.dataset.pane === pane));
+  $("mpaneSettings").classList.toggle("active", pane === "settings");
+  $("mpaneAbout").classList.toggle("active", pane === "about");
+}
+function closeModal() { $("sysModal").classList.add("hidden"); }
+
 async function loadSysConfig() {
   try {
     const s = await jfetch("/api/sysconfig");
@@ -715,11 +723,62 @@ async function loadSysConfig() {
     if (bw) bw.classList.toggle("hidden", !$("sysLan").checked);
   } catch (e) { console.error(e); }
 }
+
+/* 关于: 懒加载一次 */
+let aboutLoaded = false;
+function aboutCard(k, v, cls) {
+  const val = (v == null || v === "") ? "–" : escapeHtml(String(v));
+  return `<div class="about-item"><div class="k">${escapeHtml(k)}</div>` +
+         `<div class="v ${cls || ""}">${val}</div></div>`;
+}
+async function loadAbout() {
+  if (aboutLoaded) return;
+  try {
+    const a = await jfetch("/api/about");
+    $("aboutMeta").innerHTML = [
+      aboutCard("版本", a.describe),
+      aboutCard("构建时间", a.build_time),
+      aboutCard("提交", a.commit + (a.dirty ? " (dirty)" : ""), a.dirty ? "bad" : "ok"),
+      aboutCard("提交日期", a.commit_date),
+      aboutCard("提交说明", a.commit_subject),
+      aboutCard("完整哈希", a.commit_full),
+    ].join("");
+    const rt = a.runtime || {};
+    $("aboutRuntime").innerHTML = [
+      aboutCard("Python", rt.python),
+      aboutCard("平台", rt.platform),
+      aboutCard("运行方式", rt.frozen ? "打包程序 (frozen)" : "源码"),
+      aboutCard("pykep", rt.pykep),
+      aboutCard("pygmo", rt.pygmo),
+      aboutCard("numpy", rt.numpy),
+    ].join("");
+    $("aboutLicense").textContent = a.license_text || "(未找到 LICENSE 文件)";
+    $("aboutThirdParty").textContent = a.thirdparty_text || "(未找到 ThirdPartyNotice.md)";
+    if (a.repo) $("aboutRepo").onclick = () => window.open(a.repo, "_blank", "noopener");
+    if (a.releases) $("aboutReleases").onclick = () => window.open(a.releases, "_blank", "noopener");
+    aboutLoaded = true;
+  } catch (e) { console.error("about", e); }
+}
+async function openAbout() {
+  await loadAbout();
+  showModalPane("about");
+  $("sysModal").classList.remove("hidden");
+}
+
+document.querySelectorAll("#sysModal .side-item").forEach(btn => {
+  btn.addEventListener("click", () => {
+    if (btn.dataset.pane === "about") loadAbout();
+    showModalPane(btn.dataset.pane);
+  });
+});
 $("sysOpen").addEventListener("click", async () => {
   await loadSysConfig();
+  showModalPane("settings");
   $("sysModal").classList.remove("hidden");
 });
-$("sysClose").addEventListener("click", () => $("sysModal").classList.add("hidden"));
+$("aboutOpen").addEventListener("click", openAbout);
+$("sysClose").addEventListener("click", closeModal);
+$("aboutClose").addEventListener("click", closeModal);
 $("sysSave").addEventListener("click", async () => {
   const lan = $("sysLan").checked;
   // 开放到局域网 = 高风险的显式选择: 保存前二次确认
@@ -738,7 +797,7 @@ $("sysSave").addEventListener("click", async () => {
     const j = await r.json();
     if (!r.ok) { alert("保存失败: " + (j.error || r.statusText)); return; }
     alert("已保存。需重启程序后生效 (host/port)。");
-    $("sysModal").classList.add("hidden");
+    closeModal();
   } catch (e) { alert("保存失败: " + e.message); }
 });
 
@@ -752,10 +811,15 @@ $("sysSave").addEventListener("click", async () => {
       if (typeof Plotly !== "undefined") { state.plotlyReady = true; clearInterval(t); }
     }, 200);
   }
-  // 系统信息: host/port/0.0.0.0 警告
+  // 系统信息: host/port/版本/0.0.0.0 警告
   try {
     const h = await jfetch("/api/health");
-    $("sysInfo").textContent = `${h.host || "127.0.0.1"}:${h.port || 8765}`;
+    const ver = h.describe || h.version || "";
+    $("sysInfo").textContent =
+      `${h.host || "127.0.0.1"}:${h.port || 8765}${ver ? " · " + ver : ""}`;
+    $("sysInfo").title = "点击查看关于/build 信息";
+    $("sysInfo").style.cursor = "pointer";
+    $("sysInfo").addEventListener("click", openAbout);
     if (h.lan) { const b = $("sysLanWarnBanner"); if (b) b.classList.remove("hidden"); }
   } catch (e) { console.error(e); }
   // 一次性提示: 关标签=后台继续 (可删, 不影响脚本)
