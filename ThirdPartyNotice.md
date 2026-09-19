@@ -10,6 +10,7 @@ It includes the following third-party software components, which are governed by
 | :--- | :--- | :--- | :--- | :--- |
 | pykep | 3.0.1 | MPL-2.0 | `Copyright (c) 2018-2024, European Space Agency and contributors.` | [https://esa.github.io/pykep/](https://esa.github.io/pykep/) |
 | pygmo | 2.19.8 | MPL-2.0 | `Copyright (c) 2017-2024, European Space Agency and contributors.` | [https://esa.github.io/pagmo2/](https://esa.github.io/pagmo2/) |
+| Python (CPython) | 3.14.7 | PSF-2.0 | `Copyright (c) 2001, Python Software Foundation; All Rights Reserved` | [https://www.python.org/](https://www.python.org/) |
 | numpy | 2.5.2 | BSD-3-Clause | `Copyright (c) 2005-2025, NumPy Developers.` | [https://numpy.org/](https://numpy.org/) |
 | scipy | 1.18.1 | BSD-3-Clause | `Copyright (c) 2001-2002 Enthought, Inc. 2003-2025, SciPy Developers.` | [https://scipy.org/](https://scipy.org/) |
 | matplotlib | 3.11.1 | PSF-2.0 (Matplotlib License) | `Copyright (c) 2012-2024 Matplotlib Development Team; All Rights Reserved` | [https://matplotlib.org/](https://matplotlib.org/) |
@@ -35,6 +36,8 @@ It includes the following third-party software components, which are governed by
 | certifi | 2026.7.22 | MPL-2.0 | `Copyright (c) 2026, Kenneth Reitz and contributors.` | [https://certifi.io/](https://certifi.io/) |
 | idna | — | BSD-3-Clause | `Copyright (c) 2013-2024, Kim Davies and contributors.` | [https://github.com/kjd/idna](https://github.com/kjd/idna) |
 | urllib3 | — | MIT | `Copyright (c) 2008-2024, Andrey Petrov and contributors.` | [https://urllib3.readthedocs.io/](https://urllib3.readthedocs.io/) |
+
+> **Note on Python:** the packaged (frozen) distribution embeds the CPython 3.14 runtime and its standard library. CPython itself also bundles third-party components (e.g. OpenSSL, libffi, bzip2, Zstandard, Tcl/Tk), and its Windows binary build carries Microsoft Distributable Code conditions. The complete, verbatim license file is reproduced in [`licenses/PSF-2.0.txt`](licenses/PSF-2.0.txt).
 
 ## Build Tools (Development Dependencies)
 
