@@ -25,7 +25,7 @@
     --port 0  -> 随机选空闲端口
     其他      -> 固定该端口; 被占用时视为已有实例, 直接打开其前端并退出
 """
-from _version import __version__, alpha
+from _version import __version__, alpha, describe
 
 import bootstrap
 
@@ -82,7 +82,7 @@ def main():
         except Exception:
             pass
     slog.setup(stream=sys.stdout, debug=args.debug)
-    slog.inf(f"[env] PASTA web | ver={__version__} | pid={os.getpid()} | "
+    slog.inf(f"[env] PASTA web | ver={describe()} | pid={os.getpid()} | "
              f"py={platform.python_version()} | os={platform.platform()} | cpu={os.cpu_count()}")
 
     # 配置 (文件) -> 命令行覆盖

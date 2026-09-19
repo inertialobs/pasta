@@ -8,6 +8,7 @@ build/
 dist/
 temp/
 test*
+_build_info.py
 
 runs/
 pasta.settings.json

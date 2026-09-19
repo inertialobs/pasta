@@ -28,6 +28,8 @@ from orbcalc import COMPUTE_FIELDS, SYS_FIELDS, TRAJ_FIELDS, slog
 from orbcalc.config import TrajConfig, sanitize_name
 from orbcalc.settings import CONFIG_FILE, settings, resolve_compute
 
+from _version import __version__, commit, dirty, build_time
+
 # 运行根目录: main.py 启动时已 chdir 到此 (源码=项目根, 冻结=exe 目录)。
 # 资源 (webapp/presets) 与用户数据 (runs/presets) 同根。
 ROOT = Path.cwd()
@@ -446,7 +448,9 @@ def create_app() -> Flask:
     def health():
         import pykep
         host = settings["host"]
-        return jsonify({"ok": True, "pykep": pykep.__version__,
+        return jsonify({"ok": True, "version": __version__, "commit": commit,
+                        "dirty": dirty, "build_time": build_time,
+                        "pykep": pykep.__version__,
                         "runs_dir": str(RUNS_DIR),
                         "host": host, "port": settings["port"],
                         "lan": host in ("0.0.0.0", "::")})
