@@ -85,7 +85,7 @@ def phase_refine_mp(executor, cfg, comp, cands):
     half = _half_d(comp, 1)
     eras = cfg.era_set
     keep = _keep_n(comp["refine_keep_pct"], len(cands))
-    best_overall = None
+    refined = []
     # ---- 阶段 A: 全部窗口的 sade runs 并行 ----
     sade_best = {}
     pre = {}
@@ -130,9 +130,10 @@ def phase_refine_mp(executor, cfg, comp, cands):
         info = decode(x, udp.udp)
         slog.inf(f"  -> TOF={sum(info['tofs']):.0f} d ({sum(info['tofs']) / 365.25:.2f} yr)  "
                  f"DSM={info['dsm_total']:.0f} m/s")
-        if best_overall is None or f < best_overall[0]:
-            best_overall = (f, x, info, udp)
-    return best_overall
+        refined.append((f, x, info, udp))
+    # 保留全部细化成功窗口 (按最终选解键排序), 交由下游多样化压缩/选优
+    refined.sort(key=lambda r: select_key(cfg, r[2]))
+    return refined
 
 
 def phase_ballistic_seed_mp(executor, cfg, comp, x_ref):

@@ -114,15 +114,17 @@ def run(args):
                 slog.inf("[phase] [1/6] scan 开始")
                 cands = phase_scan_mp(ex, cfg, comp)
                 slog.inf("[phase] [2/6] refine 开始")
-                best_ref = phase_refine_mp(ex, cfg, comp, cands)
-                if best_ref is None:
+                refs = phase_refine_mp(ex, cfg, comp, cands)
+                if not refs:
                     slog.err("[main] refine failed (all windows sade failed)")
                     summary["status"] = "error"
                     summary["error"] = "refine failed (all windows sade failed)"
                     _write_result(args, summary)
                     return 2
-                f_ref, x_ref, info_ref, udp_ref = best_ref
-                candidates.append((x_ref, udp_ref))
+                # refs 已按 select_key 排序; refs[0] 作弹道播种锚点,
+                # 全部细化窗口候选进入候选池, 供压缩种子/最终选优多样化
+                f_ref, x_ref, info_ref, udp_ref = refs[0]
+                candidates.extend((x, u) for (_, x, _, u) in refs)
                 if comp["run_seed"]:
                     slog.inf("[phase] [3/6] ballistic seed")
                     x_seed = phase_ballistic_seed_mp(ex, cfg, comp, x_ref)
