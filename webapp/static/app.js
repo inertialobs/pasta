@@ -95,7 +95,7 @@ function fillCompForm(cfg) {
   $("cfgRunSeed").checked = cfg.run_seed !== false;
   $("cfgRunCompress").checked = cfg.run_compress !== false;
   $("cfgRunFrontier").checked = cfg.run_frontier !== false;
-  $("cfgJobs").value = cfg.jobs || 4;
+  $("cfgJobs").value = cfg.jobs || navigator.hardwareConcurrency || 4;
   $("cfgScanKeepPct").value = cfg.scan_keep_pct || 80;
   $("cfgScanKeepPctOut").value = $("cfgScanKeepPct").value;
   $("cfgRefineKeepPct").value = cfg.refine_keep_pct || 80;
