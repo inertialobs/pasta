@@ -88,10 +88,11 @@ def phase_refine_mp(executor, cfg, comp, cands):
     best_overall = None
     # ---- 阶段 A: 全部窗口的 sade runs 并行 ----
     sade_best = {}
+    pre = {}
     futs = []
     for rank, (f0, t0c, x0, info0) in enumerate(cands[:keep]):
-        tof_n = narrow_tof_box(x0, cfg, pct=0.15)
-        box = eras.clip(x0[0], half)
+        pre[rank] = (narrow_tof_box(x0, cfg, pct=0.15), eras.clip(x0[0], half))
+        tof_n, box = pre[rank]
         sade_best[rank] = None
         if not box:
             continue
@@ -105,13 +106,12 @@ def phase_refine_mp(executor, cfg, comp, cands):
             sade_best[rank] = (f, x)
     # ---- 阶段 B: 每窗口 局部级联(串行) + multistart(种子并行) ----
     for rank, (_, _, x0, _) in enumerate(cands[:keep]):
-        tof_n = narrow_tof_box(x0, cfg, pct=0.15)
+        tof_n, box = pre[rank]
         sb = sade_best.get(rank)
         if sb is None:
             slog.wrn(f"  window #{rank + 1}: sade all failed, skip")
             continue
         f, x = sb
-        box = eras.clip(x0[0], half)
         udp = _build_udp("tof", cfg, box, tof_n, None, None)
         slog.inf(f"\n[refine] window #{rank + 1} t0~{pk.epoch(x0[0]).to_datetime().date()} "
                  f"sade(gen={gen},pop={pop}) x{runs}")
