@@ -22,6 +22,15 @@ orbcalc — 轨道弹道优化计算库 (配置驱动, 无任何 GUI/Web 依赖)
 """
 import os
 
+# 多进程并行时禁止 BLAS/OpenMP 在 worker 内再按核数开线程:
+# 任务级并行由 ProcessPoolExecutor 提供; 若每个子进程再开 nproc 个 BLAS
+# 线程, 总线程数 ≈ jobs × nproc, 会内存/线程超订, 触发 OpenBLAS 分配
+# 失败并终止 worker (BrokenProcessPool). 必须在 numpy/pykep 导入前设置.
+# setdefault: 尊重用户外部已显式设置的值.
+for _blas_var in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS",
+                  "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
+    os.environ.setdefault(_blas_var, "1")
+
 __version__ = "0.1.0"
 
 # 轨迹字段: seq/eras/tof_bounds 的值来自预设 (运行时加载), 故仅登记键名
