@@ -36,8 +36,17 @@ It includes the following third-party software components, which are governed by
 | certifi | 2026.7.22 | MPL-2.0 | `Copyright (c) 2026, Kenneth Reitz and contributors.` | [https://certifi.io/](https://certifi.io/) |
 | idna | — | BSD-3-Clause | `Copyright (c) 2013-2024, Kim Davies and contributors.` | [https://github.com/kjd/idna](https://github.com/kjd/idna) |
 | urllib3 | — | MIT | `Copyright (c) 2008-2024, Andrey Petrov and contributors.` | [https://urllib3.readthedocs.io/](https://urllib3.readthedocs.io/) |
+| plotly.js | 3.0.1 | MIT | `Copyright (c) 2012-2025, Plotly, Inc.` | [https://plotly.com/javascript/](https://plotly.com/javascript/) |
+| maplibre-gl-js (bundled in plotly.js) | 4.7.1 | BSD-3-Clause | `Copyright (c) 2023, MapLibre contributors; contains code from mapbox-gl-js (c) 2020 Mapbox, glfx.js (c) 2011 Evan Wallace, d3-color (c) 2010-2016 Mike Bostock.` | [https://github.com/maplibre/maplibre-gl-js](https://github.com/maplibre/maplibre-gl-js) |
+| buffer | — | MIT | `Copyright (c) Feross Aboukhadijeh.` | [https://github.com/feross/buffer](https://github.com/feross/buffer) |
+| is-buffer | — | MIT | `Copyright (c) Feross Aboukhadijeh.` | [https://github.com/feross/is-buffer](https://github.com/feross/is-buffer) |
+| ieee754 | — | BSD-3-Clause | `Copyright (c) Feross Aboukhadijeh.` | [https://github.com/feross/ieee754](https://github.com/feross/ieee754) |
+| pad-left | — | MIT | `Copyright (c) 2014-2015, Jon Schlinkert.` | [https://github.com/jonschlinkert/pad-left](https://github.com/jonschlinkert/pad-left) |
+| repeat-string | — | MIT | `Copyright (c) 2014-2015, Jon Schlinkert.` | [https://github.com/jonschlinkert/repeat-string](https://github.com/jonschlinkert/repeat-string) |
 
 > **Note on Python:** the packaged (frozen) distribution embeds the CPython 3.14 runtime and its standard library. CPython itself also bundles third-party components (e.g. OpenSSL, libffi, bzip2, Zstandard, Tcl/Tk), and its Windows binary build carries Microsoft Distributable Code conditions. The complete, verbatim license file is reproduced in [`licenses/PSF-2.0.txt`](licenses/PSF-2.0.txt).
+
+> **Note on frontend assets:** `webapp/static/plotly.min.js` (plotly.js v3.0.1) bundles further permissively licensed libraries (e.g. d3 / regl / topojson / earcut); the table above lists only components whose individual license banner is retained in the bundle. The complete, verbatim composite license for maplibre-gl-js (including its mapbox-gl-js, glfx.js and d3-color portions) is reproduced in [`licenses/maplibre-gl-LICENSE.txt`](licenses/maplibre-gl-LICENSE.txt).
 
 ## Build Tools (Development Dependencies)
 
