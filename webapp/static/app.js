@@ -412,9 +412,11 @@ document.addEventListener("input", e => {
 $("saveCfg").addEventListener("click", () => {
   const blob = new Blob([$("cfgJsonBox").value], { type: "application/json" });
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
+  const url = URL.createObjectURL(blob);
+  a.href = url;
   a.download = "traj_config.json";
   a.click();
+  URL.revokeObjectURL(url);
 });
 
 /* ============================================================
