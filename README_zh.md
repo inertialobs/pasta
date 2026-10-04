@@ -1,6 +1,7 @@
-# PASTA — Parallel Astrodynamic Solver for Trajectory Analysis
+<img width="4000" height="2000" alt="introducing" src="https://github.com/user-attachments/assets/9d74c8e1-1074-45a4-9312-db9ce1cd4e44" />
 
 [![License](https://img.shields.io/badge/License-GPL--v3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0.txt) [![Python](https://img.shields.io/badge/python-3.13%20%7C%203.14-blue)](https://www.python.org/) [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%28Debian%29%20x64-lightgrey)](https://www.microsoft.com/en-us/windows)
+
 并行天体动力轨道分析求解器：配置驱动的 MGA-1DSM 弹弓轨道优化 GUI 工具。
 
 - 前端：本地 Web 界面 (`http://127.0.0.1:8765`)
@@ -16,7 +17,7 @@
 - **配置即脚本**：一个网页完成「配置 → 计算 → 可视化」，表单生成的配置本身就是可复现的完整任务脚本（JSON）。
 - **六阶段并行流水线**：`扫描 → 细化 → 弹道播种 → 宽 J→U 压缩 → 紧前沿压缩 → 精选`，每阶段独立可开关。
 - **固定随机种子**：同版本数值库 + 固定种子 → 逐位可复现（同配置两次运行结果一致）。
-- **全局计算配置**：只有一份计算配置（流水线开关/保留数/进程数），每次提交任务自动更新、重启自动恢复——计算参数不再挂在预设上。
+- **全局计算配置**：只有一份计算配置（流水线开关/保留比例/进程数），每次提交任务自动更新、重启自动恢复——计算参数不再挂在预设上。
 - **3D 可视化**：Plotly 3D 轨道图 + 静态 PNG + 结构化 `result.json`。
 
 ## 安装
@@ -27,7 +28,7 @@
 从 [release 页面](https://github.com/inertialobs/pasta/releases)下载开箱即用的二进制包
 
 ### 2. pip（源码运行）
-需要 Windows + Python 3.14。注意：PyPI 上没有 pykep / pygmo 的官方 Windows wheel，需先从预编译 wheel 仓库安装：
+需要 Windows + Python 3.13 / 3.14。注意：PyPI 上没有 pykep / pygmo 的官方 Windows wheel，需先从预编译 wheel 仓库安装：
 - 从 [inertialobs/pykep-pygmo-win-wheels/releases](https://github.com/inertialobs/pykep-pygmo-win-wheels/releases) 下载对应 `pykep` 和 `pygmo` 的 `.whl`
 - 然后：
   ```bash
@@ -38,8 +39,9 @@
   ```
 
 ### 3. conda（源码运行）
-按 [pykep 官方文档](https://esa.github.io/pykep/) 通过 conda 安装 `pykep` / `pygmo`，再到项目目录运行：
+按 [pykep 官方文档](https://esa.github.io/pykep/) 通过 conda 安装 `pykep` / `pygmo`，再安装其余运行依赖并到项目目录运行：
 ```bash
+pip install -r requirements.txt
 python main.py               # 默认 http://127.0.0.1:8765
 ```
 
@@ -59,7 +61,7 @@ pyinstaller build.spec       # 产物 dist\pasta\pasta.exe
 ## 使用
 
 1. **任务配置**：任务名单独一行；行星序列节点可增删；每腿 TOF 边界；目标与约束（min_tof / min_dsm / 自定义权重、DSM 上限、发射/到达 v∞、eta、rp 上界、前沿罚）；发射窗口可增删（多 era）。
-2. **计算配置**：流水线 4 阶段开关、并行进程数、搜索步进、扫描/细化保留数。
+2. **计算配置**：流水线 4 阶段开关、并行进程数、搜索步进、扫描/细化保留比例。
 3. **提交计算** → 自动排队执行（同时最多 1 个任务，其余排队）。
 4. **结果卡**：总飞行时间 / 总 DSM / C3，逐腿详情（飞掠 rp、DSM 位置），3D 轨道图 + 静态图。
 5. **任务管理**：运行 / 排队 / 取消 / 删除；关闭标签页任务仍在后台继续；右上角「⏹ 终止程序」停止后端。
@@ -77,7 +79,7 @@ pyinstaller build.spec       # 产物 dist\pasta\pasta.exe
 - **主入口** `main.py`：启动 Flask；`--cli` 子进程模式剥掉标记转发给计算入口；入口调用 `multiprocessing.freeze_support()`（PyInstaller 冻结版必需，否则池 worker 崩溃 BrokenProcessPool）。
 - **计算入口** `orbcalc/run_cli.py`：加载配置 → 跑 6 阶段 → 写产物；异常路径在 `finally` 中释放所有 multiprocessing 子进程。
 - **产物**（每任务目录 `runs/<job>/`）：`config.json`、`log.txt`、`result.json`、`plot.json`、`best_x.npy`、`trajectory.png`。
-- **配置驱动**：`orbcalc/config.py` 的 `TrajConfig` 承载全部任务参数（默认值逐项对齐参考脚本 `temp/EVVEJU_TOF_1DSM_mp.py`）。
+- **配置驱动**：`orbcalc/config.py` 的 `TrajConfig` 承载全部任务参数（默认值与参考实现逐项对齐）。
 - **全局配置** `pasta.settings.json`：`host` / `port` / `open_browser` + 全局计算配置；命令行参数优先于文件。
 <!-- 
 ## 🔧 内置预设
@@ -92,13 +94,20 @@ pyinstaller build.spec       # 产物 dist\pasta\pasta.exe
 ```
 main.py                 Web/CLI 启动器
 build.spec              PyInstaller 打包配置
-requirements(.dev).txt  运行/打包依赖
-orbcalc/                引擎层 (config / udp / stages / engines / run_cli / sysconfig)
+requirements.txt        运行依赖 (打包需另装 pyinstaller)
+orbcalc/                引擎层 (config / udp / stages / engines / run_cli / settings)
 webapp/                 Flask 后端 + 前端 (templates + static)
 presets/                内置 + 用户导出的任务预设
 runs/<job>/             任务产物
 ```
 
+### Acknowledgments
+
+感谢Oxygen 5305提供的原型代码和MifanInSalt提供的图标文件, 以及其他在早期提供帮助与测试的朋友们
+
+感谢所有开源组件的作者, 没有他们的帮助这个软件不会像现在这样呈现在此.
+
+同时感谢来自莱茵生命的Astesia Urbica和Astgenne Urbica. 群星为我们照亮前路.
 
 ### license: [GPL-3.0 License](https://www.gnu.org/licenses/gpl-3.0.txt)
 

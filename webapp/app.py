@@ -453,6 +453,10 @@ def create_app() -> Flask:
     def index():
         return render_template("index.html")
 
+    @app.get("/logo.png")
+    def logo():
+        return send_from_directory(ROOT / "asserts", "logo.png")
+
     @app.get("/api/health")
     def health():
         import pykep

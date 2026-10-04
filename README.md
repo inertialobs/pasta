@@ -1,4 +1,4 @@
-# PASTA — Parallel Astrodynamic Solver for Trajectory Analysis
+<img width="4000" height="2000" alt="introducing" src="https://github.com/user-attachments/assets/9d74c8e1-1074-45a4-9312-db9ce1cd4e44" />
 
 [![License](https://img.shields.io/badge/License-GPL--v3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0.txt) [![Python](https://img.shields.io/badge/python-3.13%20%7C%203.14-blue)](https://www.python.org/) [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%28Debian%29%20x64-lightgrey)](https://www.microsoft.com/en-us/windows)
 
@@ -18,7 +18,7 @@ The name stands for *Parallel Astrodynamic Solver for Trajectory Analysis* — c
 - **Configuration as script**：a single web page completes "configure → compute → visualize"; the generated config is itself a reproducible full task script (JSON).
 - **Six-stage parallel pipeline**：`scan → refine → ballistic seed → wide J→U compress → tight-frontier compress → pick best`；each stage independently toggleable.
 - **Fixed random seeds**：fixed seeds + pinned numeric library versions → bit-identical reproducibility (same config, same result on repeated runs).
-- **Global compute config**：one single compute configuration (pipeline toggles / keep counts / workers); auto-updated on every submit and restored on restart — no per-preset engine settings.
+- **Global compute config**：one single compute configuration (pipeline toggles / keep percentages / workers); auto-updated on every submit and restored on restart — no per-preset engine settings.
 - **3D visualization**：Plotly 3D trajectory + static PNG + structured `result.json`.
 
 ## Installation
@@ -29,7 +29,7 @@ Three ways to get PASTA:
 Grab the binary file from the [release page](https://github.com/inertialobs/pasta/releases) and it works out of the box.
 
 ### 2. Source via pip
-Requires Windows + Python 3.14. Notice that `pykep`/`pygmo` have no official Windows wheels on PyPI, so install them from the prebuilt wheel repository first:
+Requires Windows + Python 3.13 / 3.14. Notice that `pykep`/`pygmo` have no official Windows wheels on PyPI, so install them from the prebuilt wheel repository first:
 - Download the matching `pykep` and `pygmo` `.whl` from [inertialobs/pykep-pygmo-win-wheels/releases](https://github.com/inertialobs/pykep-pygmo-win-wheels/releases)
 - Then:
   ```bash
@@ -40,8 +40,9 @@ Requires Windows + Python 3.14. Notice that `pykep`/`pygmo` have no official Win
   ```
 
 ### 3. Source via conda
-Install `pykep`/`pygmo` through conda following the [official pykep docs](https://esa.github.io/pykep/), then run from the project dir:
+Install `pykep`/`pygmo` through conda following the [official pykep docs](https://esa.github.io/pykep/), then install the remaining runtime deps and run from the project dir:
 ```bash
+pip install -r requirements.txt
 python main.py        # default http://127.0.0.1:8765
 ```
 
@@ -61,7 +62,7 @@ pyinstaller build.spec           # output dist\pasta\pasta.exe (onedir)
 ## Usage
 
 1. **Mission config**：task name on its own row；planet-sequence nodes addable/removable；per-leg TOF bounds；objective & constraints (min_tof / min_dsm / custom weights, DSM limit, launch/arrival v∞, eta, rp upper bound, frontier penalty)；launch windows addable/removable (multiple epochs).
-2. **Computation config**：4 pipeline stage toggles, worker count, search step, scan/refine keep counts.
+2. **Computation config**：4 pipeline stage toggles, worker count, search step, scan/refine keep percentages.
 3. **Submit** → automatically queued (at most 1 running job; the rest queue).
 4. **Result card**：total TOF / total DSM / C3, per-leg details (flyby rp, DSM location), 3D plot + static image.
 5. **Job management**：running / queued / cancel / delete；closing the tab keeps the job running in the background；top-right「⏹」stops the backend.
@@ -79,7 +80,7 @@ Browser (Flask web UI)
 - **Entry** `main.py`：starts Flask; the `--cli` subprocess mode strips the flag and forwards to the computation entry; the entry calls `multiprocessing.freeze_support()` (required in PyInstaller frozen builds or the pool workers crash with BrokenProcessPool).
 - **Computation entry** `orbcalc/run_cli.py`：loads config → runs the 6 stages → writes artifacts; the error path releases all multiprocessing children in `finally`.
 - **Artifacts**（per-job dir `runs/<job>/`）：`config.json`、`log.txt`、`result.json`、`plot.json`、`best_x.npy`、`trajectory.png`.
-- **Config-driven**：`orbcalc/config.py` `TrajConfig` carries every task parameter (defaults aligned item-by-item with the reference script `temp/EVVEJU_TOF_1DSM_mp.py`).
+- **Config-driven**：`orbcalc/config.py` `TrajConfig` carries every task parameter (defaults kept aligned with the reference implementation).
 - **Global settings** `pasta.settings.json`：`host` / `port` / `open_browser` + global compute config；CLI flags override the file.
 <!-- 
 ## Built-in Presets
@@ -94,12 +95,19 @@ Browser (Flask web UI)
 ```
 main.py                 Web/CLI launcher
 build.spec              PyInstaller packaging config
-requirements(.dev).txt  run / build dependencies
-orbcalc/                engine layer (config / udp / stages / engines / run_cli / sysconfig)
+requirements.txt        runtime dependencies (install pyinstaller separately to build)
+orbcalc/                engine layer (config / udp / stages / engines / run_cli / settings)
 webapp/                 Flask backend + frontend (templates + static)
 presets/                built-in + user-exported task presets
 runs/<job>/             job artifacts
 ```
+### Acknowledgments
+
+Thanks to Oxygen 5305 for the prototype codes and MifanInSalt for the icon file, and all the friends that offerred tests and helps.
+
+Thanks to the authors and contributors of third party components, without whose help this software could not have been delivered as it is.
+
+Also thanks to Astesia Urbica and Astgenne Urbica from RhineLab LLC. The stars will light our way.
 
 ### License: [GPL-3.0](https://www.gnu.org/licenses/gpl-3.0.txt)
 

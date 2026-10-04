@@ -10,9 +10,12 @@ body { margin: 0; font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
        background: var(--bg); color: var(--txt); }
 
 /* ---------- 页头 ---------- */
-header { padding: 14px 22px; border-bottom: 1px solid var(--line); }
-header h1 { margin: 0; font-size: 20px; }
-header .sub { color: var(--dim); font-size: 13px; margin-top: 4px; }
+header { padding: 14px 22px; border-bottom: 1px solid var(--line); --brand-h: 48px; }
+.brand { display: flex; align-items: center; gap: 12px; }
+/* logo 高度 = h1(28) + sub 上边距(4) + sub(16) = 48 = --brand-h */
+.brand-logo { display: block; height: var(--brand-h); width: auto; }
+header h1 { margin: 0; font-size: 20px; line-height: 28px; }
+header .sub { color: var(--dim); font-size: 13px; line-height: 16px; margin-top: 4px; }
 .header-actions { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
 .sys-info { font-size: 12px; color: var(--dim); }
 .banner { border-radius: 8px; padding: 6px 12px; font-size: 12.5px; margin-top: 10px; }

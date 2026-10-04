@@ -74,12 +74,16 @@ datas += [
     (os.path.join(_here, 'webapp/static'),        'webapp/static'),
     (os.path.join(_here, 'presets'),              'presets'),
     (os.path.join(_here, 'licenses'),             'licenses'),
+    (os.path.join(_here, 'asserts', 'logo.png'),  'asserts'),
     (os.path.join(_here, 'LICENSE'),              '.'),
     (os.path.join(_here, 'ThirdPartyNotice.md'),  '.'),
 ]
 # 运行时目录: 冻结版 EXE(contents_directory='.') 使所有依赖/资源与 exe 同级;
 # main.py 启动时 chdir 到 exe 目录 -> 资源 (webapp/presets) 与用户数据同根且可写,
 # runs/、用户预设、pasta.settings.json 均写在 exe 旁。
+
+# ---- 应用图标 (EXE 图标; PyInstaller 仅在 Windows/macOS 生效, Linux 忽略) ----
+_icon = os.path.join(_here, 'asserts', 'icon.ico')
 
 # ---- VC runtime (仅 Windows): 打进包内, 目标机无需安装 VC++ Redistributable ----
 if sys.platform == 'win32':
@@ -140,6 +144,7 @@ exe = EXE(
     a.scripts,
     exclude_binaries=True,          # onedir 模式
     name='pasta',
+    icon=_icon if sys.platform == 'win32' else None,
     contents_directory='.',         # 旧版 onedir 布局: 依赖/资源与 exe 同级 (cwd 即运行根)
     debug=False,
     bootloader_ignore_signals=False,
