@@ -122,6 +122,8 @@ def multistart_mp(executor, kind, cfg, half, t0, tof, w1, w2, x_ref, n_seeds=60,
                   maxeval=1500, seed=7, pct=0.12):
     """窄盒内多起点局部搜索 (并行版): 种子 0 = 参考解本身, 保证单调不减.
     起点生成方式与串行版逐位一致 (同一 rng 序列), 各起点 sbplx 并行."""
+    if n_seeds < 1:
+        n_seeds = 1
     udp = _build_udp(kind, cfg, t0, tof, w1, w2)
     lb, ub = udp.get_bounds()
     rng = np.random.default_rng(seed)
