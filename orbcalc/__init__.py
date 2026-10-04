@@ -1,10 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-orbcalc — 轨道弹道优化计算库 (配置驱动, 无任何 GUI/Web 依赖)
-
-来源: temp/EVVEJU_TOF_1DSM_mp.py 的物理模型 / 目标函数 / 多进程流水线,
-将其硬编码 (序列、边界、权重、窗口) 全部参数化为 TrajConfig,
-从而"每个轨道一个脚本"变为"一个配置 JSON 驱动一次计算".
+orbcalc — 轨道弹道优化计算库
 
 模块:
     config       TrajConfig (dict 子类) + 预设 + JSON 读写

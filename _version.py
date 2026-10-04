@@ -1,5 +1,5 @@
-__version__ = '0.1.0 a1'
-alpha = True
+__version__ = '0.1.0'
+alpha = False
 
 try:
     from _build_info import (
