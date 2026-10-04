@@ -27,6 +27,8 @@ def assert_roles_and_leg_labels(page, seq):
 
 def test_add_and_delete_eras_preserves_order_and_minimum_one(editor_page):
     page = editor_page
+    assert page.locator("#cfgName").input_value() == ""
+    assert page.locator("#cfgName").get_attribute("placeholder") == "Auto-generated"
     original = read_config(page)["eras"]
 
     page.locator("#eraAdd").click()

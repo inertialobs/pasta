@@ -25,7 +25,7 @@ from pathlib import Path
 from flask import Flask, jsonify, render_template, request, send_from_directory
 
 from orbcalc import COMPUTE_FIELDS, SYS_FIELDS, TRAJ_FIELDS, slog
-from orbcalc.config import TrajConfig, sanitize_name
+from orbcalc.config import TrajConfig, ensure_project_name, sanitize_name
 from orbcalc.settings import CONFIG_FILE, settings, resolve_compute
 
 from _version import (__version__, commit, commit_full, commit_date,
@@ -93,8 +93,11 @@ class JobManager:
     def submit(self, config_dict: dict, jobs_override: int | None = None) -> str:
         cfg = TrajConfig.from_dict(config_dict)
         cfg.validate()
+        ensure_project_name(cfg)
         comp = resolve_compute(config_dict, jobs_override)
         job_cfg = {**dict(cfg), **comp}   # 轨迹 + 计算快照, 供 run_cli 读取
+        request_cfg = dict(config_dict)
+        request_cfg["name"] = cfg.name
         with self._lock:
             # 同秒同名也要唯一: 目录已存在/内存已有则追加序号 (加锁内完成, 防并发)
             base = time.strftime("%Y%m%d_%H%M%S") + "_" + sanitize_name(cfg.name)
@@ -108,7 +111,7 @@ class JobManager:
             with open(d / "config.json", "w", encoding="utf-8") as f:
                 json.dump(job_cfg, f, ensure_ascii=False, indent=2)
             with open(d / "request.json", "w", encoding="utf-8") as f:
-                json.dump(config_dict, f, ensure_ascii=False, indent=2)
+                json.dump(request_cfg, f, ensure_ascii=False, indent=2)
             self._jobs[jid] = {
                 "job_id": jid,
                 "name": cfg.name,

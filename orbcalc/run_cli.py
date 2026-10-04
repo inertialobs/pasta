@@ -37,7 +37,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .config import TrajConfig
+from .config import TrajConfig, ensure_project_name
 from .udp import TOF_UDP, DSM_UDP
 from .decode_report import decode, report, summarize
 from .plot_data import build_plot_json, render_png
@@ -82,6 +82,7 @@ def _load(args):
     cfg = TrajConfig.from_dict(data)
     comp = resolve_compute(data, args.jobs)
     cfg.validate()
+    ensure_project_name(cfg)
     return cfg, comp
 
 

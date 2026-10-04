@@ -146,3 +146,33 @@ def sanitize_name(name):
     """任务名 -> 安全目录名."""
     s = re.sub(r"[^\w\-]+", "_", name).strip("_") or "job"
     return s[:40]
+
+
+_PROJECT_ROUTE_CODES = {
+    "MERCURY": "M",
+    "VENUS": "V",
+    "EARTH": "E",
+    "MARS": "M",
+    "JUPITER": "J",
+    "SATURN": "S",
+    "URANUS": "U",
+    "NEPTUNE": "N",
+}
+
+
+def auto_project_name(seq, eras) -> str:
+    """路线缩写 + 每个发射窗口起始年月；窗口顺序与配置一致。"""
+    route = "".join(_PROJECT_ROUTE_CODES.get(str(tag).upper(), str(tag)[:1].upper())
+                    for tag in seq)
+    months = "+".join(str(era[0])[:7] for era in eras if era and era[0])
+    return f"{route} {months}" if months else route
+
+
+def ensure_project_name(cfg: TrajConfig) -> str:
+    """为空名称生成路线/窗口名；显式名称只做首尾空白清理。"""
+    name = cfg.name
+    if not isinstance(name, str) or not name.strip():
+        cfg.name = auto_project_name(cfg.seq, cfg.eras)
+    else:
+        cfg.name = name.strip()
+    return cfg.name

@@ -69,7 +69,7 @@ def editor_page(page, live_server):
     page.goto(live_server)
     page.wait_for_function(
         "() => { try { const c = JSON.parse(document.querySelector('#cfgJsonBox').value); "
-        "return c.name === 'EVVEJS Cassini 1997-10' && c.jobs === 1 && c.era_step_d === 10; "
+        "return c.name === '' && c.jobs === 1 && c.era_step_d === 10; "
         "} catch { return false; } }"
     )
     return page

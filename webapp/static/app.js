@@ -64,7 +64,7 @@ async function loadCompCfg() {
 }
 
 function fillTrajForm(cfg) {
-  $("cfgName").value = cfg.name || "EVVEJU";
+  $("cfgName").value = cfg.name || "";
   $("cfgObjective").value = cfg.objective === "min_dsm" ? "min_dsm"
     : cfg.objective === "custom" ? "custom" : "min_tof";
   const w = cfg.objective_weights || [1, 0];
@@ -256,7 +256,7 @@ function collectConfig() {
     r.querySelector('[data-k="a"]').value, r.querySelector('[data-k="b"]').value]);
   const objective = $("cfgObjective").value;
   const obj = {
-    name: $("cfgName").value || "EVVEJU",
+    name: $("cfgName").value.trim(),
     seq,
     safe_radius: {},
     tof_bounds: tofB,
@@ -376,8 +376,8 @@ $("presetSelect").addEventListener("change", async () => {
   } catch (e) { console.error(e); }
 });
 async function savePreset() {
-  const name = ($("cfgName").value || "EVVEJU").trim();
-  if (!name) { alert("先填写任务名"); return; }
+  const name = $("cfgName").value.trim();
+  if (!name) { alert("保存预设前请填写预设名"); return; }
   try {
     const r = await fetch("/api/presets", {
       method: "POST",

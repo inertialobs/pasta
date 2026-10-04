@@ -29,8 +29,9 @@ for _blas_var in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS",
 
 # 轨迹字段: seq/eras/tof_bounds 的值来自预设 (运行时加载), 故仅登记键名
 TRAJ_PRESET_KEYS = ("seq", "eras", "tof_bounds")
+DEFAULT_PROJECT_NAME = ""
 TRAJ_DEFAULTS = {
-    "name": "EVVEJS Cassini 1997-10",
+    "name": DEFAULT_PROJECT_NAME,
     "safe_radius": {},                       # TAG -> 半径 m (覆盖 planets 默认)
     "vinf_bounds_kmps": [3.5, 6.0],
     "eta_bounds": [0.01, 0.9],
