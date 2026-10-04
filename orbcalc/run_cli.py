@@ -39,10 +39,10 @@ import numpy as np
 
 from .config import TrajConfig, ensure_project_name
 from .udp import TOF_UDP, DSM_UDP
-from .decode_report import decode, report, summarize
+from .decode_report import report, summarize
 from .plot_data import build_plot_json, render_png
 from .stages import (phase_scan_mp, phase_refine_mp, phase_ballistic_seed_mp,
-                     compress_pass_mp, pick_best, select_key)
+                     compress_pass_mp, pick_best, select_key, candidate_key)
 from . import slog
 from .settings import settings, resolve_compute
 
@@ -133,8 +133,8 @@ def run(args):
 
             if (comp["run_compress"] or comp["run_frontier"]) and candidates:
                 def _key(item):
-                    info = decode(item[0], item[1].udp)
-                    return select_key(cfg, info)
+                    key, _ = candidate_key(cfg, item[0], item[1])
+                    return key
                 candidates.sort(key=_key)
                 seeds = candidates[:2]
                 if comp["run_compress"]:

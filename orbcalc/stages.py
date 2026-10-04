@@ -235,13 +235,28 @@ def select_key(cfg, info):
     return (feasible, tof, 0.0)
 
 
+def candidate_key(cfg, x, udp):
+    """安全 decode 并返回 (select_key, info)；单个候选失败时返回最差键与 None。"""
+    try:
+        info = decode(x, udp.udp)
+        return select_key(cfg, info), info
+    except Exception as e:
+        slog.wrn(f"[stages] decode failed for one candidate, treating as worst: {e}")
+        return (1, 1e18, 1e18), None
+
+
 def pick_best(cfg, candidates):
-    """候选池中按 cfg.objective 选优 (DSM 超限的候选整体劣后)."""
+    """候选池中按 cfg.objective 选优 (DSM 超限的候选整体劣后).
+    允许部分候选 decode 失败；全部失败时抛出 RuntimeError。
+    """
     best = None
     best_key = None
     for x, udp in candidates:
-        info = decode(x, udp.udp)
-        key = select_key(cfg, info)
+        key, info = candidate_key(cfg, x, udp)
+        if info is None:
+            continue
         if best_key is None or key < best_key:
             best, best_key = (info, x, udp), key
+    if best is None:
+        raise RuntimeError("all candidates failed to decode")
     return best
