@@ -68,7 +68,7 @@
         <div class="field"><label>目标</label>
           <select id="cfgObjective" class="wide">
             <option value="min_tof">最短飞行时间 (min TOF)</option>
-            <option value="min_dsm">最小总 DSM (min DSM)</option>
+            <option value="min_dsm" selected>最小总 DSM (min DSM)</option>
             <option value="custom">自定义 (权重 + 惩罚系数)</option>
           </select>
         </div>
@@ -78,14 +78,14 @@
           <label>L1 惩罚系数 <input id="cfgPenL1" type="number" value="10" step="1" min="0"></label>
           <label>L2 惩罚系数 <input id="cfgPenL2" type="number" value="0.2" step="0.1" min="0"></label>
         </div>
-        <div class="field"><label>DSM 上限 (m/s)</label><input id="cfgDsmLimit" type="number" value="1300" step="10"></div>
+        <div class="field"><label>DSM 上限 (m/s)</label><input id="cfgDsmLimit" type="number" value="600" step="10"></div>
         <div class="field"><label>发射 v∞ (km/s)</label>
           <input id="cfgVinfL" type="number" value="3.5" step="0.1"> ~
           <input id="cfgVinfH" type="number" value="6.0" step="0.1"></div>
         <div class="field"><label>eta 范围</label>
           <input id="cfgEtaL" type="number" value="0.01" step="0.01"> ~
           <input id="cfgEtaH" type="number" value="0.9" step="0.01"></div>
-        <div class="field"><label>飞掠 rp 全局上界 (×R)</label><input id="cfgRpUb" type="number" value="30" step="1"></div>
+        <div class="field"><label>飞掠 rp 全局上界 (×R)</label><input id="cfgRpUb" type="number" value="200" step="1"></div>
         <div class="field"><label>前沿罚系数 (L1/L2)</label>
           <input id="cfgFPenL1" type="number" value="30" step="1" min="0"> ~
           <input id="cfgFPenL2" type="number" value="2" step="0.1" min="0"></div>
