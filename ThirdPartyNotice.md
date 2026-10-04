@@ -1,6 +1,6 @@
 # Third Party Notices — PASTA
 
-This software（PASTA, Parallel Astrodynamic Solver for Trajectory Analysis）public in **GNU GPL v3**
+This software (PASTA, Parallel Astrodynamic Solver for Trajectory Analysis) is released under **GNU GPL v3**.
 It includes the following third-party software components, which are governed by their respective licenses.
 
 
