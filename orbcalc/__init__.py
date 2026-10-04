@@ -36,14 +36,15 @@ __version__ = "0.1.0"
 # 轨迹字段: seq/eras/tof_bounds 的值来自预设 (运行时加载), 故仅登记键名
 TRAJ_PRESET_KEYS = ("seq", "eras", "tof_bounds")
 TRAJ_DEFAULTS = {
-    "name": "Cassini",
+    "name": "EVVEJS Cassini 1997-10",
     "safe_radius": {},                       # TAG -> 半径 m (覆盖 planets 默认)
     "vinf_bounds_kmps": [3.5, 6.0],
     "eta_bounds": [0.01, 0.9],
-    "rp_ub": 30.0,                           # 全局飞掠 rp 上界 (pykep mga_1dsm 仅支持标量)
-    "objective": "min_tof",                  # "min_tof" | "min_dsm" | "custom"
+    "rp_ub": 200.0,                          # 全局飞掠 rp 上界 (pykep mga_1dsm 仅支持标量);
+                                             # 需 >30 才能表示木星远距飞掠 (真实卡西尼 ~136 R_J)
+    "objective": "min_dsm",                  # "min_tof" | "min_dsm" | "custom"
     "objective_weights": [1.0, 0.0],         # custom: [TOF, DSM] 权重
-    "dsm_limit_ms": 1300.0,                  # m/s (硬核验阈值)
+    "dsm_limit_ms": 600.0,                   # m/s (硬核验阈值)
     "penalty": [10.0, 0.2],                  # 默认 DSM 越界罚 (线性, 二次)
     "frontier_penalty": [30.0, 2.0],         # 前沿阶段更强罚
     "wl": 2e-5,                              # 发射 v∞ 超 5.0 km/s 罚 (m/s)
