@@ -518,7 +518,7 @@ def create_app() -> Flask:
 
     @app.get("/logo.png")
     def logo():
-        return send_from_directory(ROOT / "asserts", "logo.png")
+        return send_from_directory(ROOT / "assets", "logo.png")
 
     @app.get("/api/health")
     def health():

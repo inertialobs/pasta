@@ -65,7 +65,7 @@ datas += [
     (os.path.join(_here, 'webapp/static'),        'webapp/static'),
     (os.path.join(_here, 'presets'),              'presets'),
     (os.path.join(_here, 'licenses'),             'licenses'),
-    (os.path.join(_here, 'asserts', 'logo.png'),  'asserts'),
+    (os.path.join(_here, 'assets', 'logo.png'),  'assets'),
     (os.path.join(_here, 'LICENSE'),              '.'),
     (os.path.join(_here, 'ThirdPartyNotice.md'),  '.'),
 ]
@@ -74,7 +74,7 @@ datas += [
 # runs/、用户预设、pasta.settings.json 均写在 exe 旁。
 
 # ---- 应用图标 (EXE 图标; PyInstaller 仅在 Windows/macOS 生效, Linux 忽略) ----
-_icon = os.path.join(_here, 'asserts', 'icon.ico')
+_icon = os.path.join(_here, 'assets', 'icon.ico')
 
 # ---- VC runtime (仅 Windows): 打进包内, 目标机无需安装 VC++ Redistributable ----
 if sys.platform == 'win32':
