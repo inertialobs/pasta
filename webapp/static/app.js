@@ -34,7 +34,7 @@ const PLANETS = {
 /* ---------- 状态 ---------- */
 const state = {
   jobs: [], activeJobId: null, pollTimer: null, plotlyReady: false,
-  seq: [], pendingTofBounds: null, busy: false,
+  seq: [], pendingTofBounds: null, busy: false, showDsmDir: true,
 };
 
 /* ============================================================
@@ -591,8 +591,14 @@ async function renderResult(jid) {
 
   const legs = r.legs || [];
   $("legTable").innerHTML = "<h3>每腿</h3>" + tableHtml(
-    ["从", "到", "TOF (d)", "DSM (m/s)", "eta"],
-    legs.map(l => [l.from, l.to, fmt(l.tof_d, 1), fmt(l.dsm_ms, 0), fmt(l.eta, 3)]));
+    ["从", "到", "TOF (d)", "DSM (m/s)", "eta", "R (m/s)", "T (m/s)", "N (m/s)"],
+    legs.map(l => {
+      const rtn = l.dsm_rtn_ms || [];
+      return [l.from, l.to, fmt(l.tof_d, 1), fmt(l.dsm_ms, 0), fmt(l.eta, 3),
+        rtn.length === 3 ? fmt(rtn[0], 1) : "–",
+        rtn.length === 3 ? fmt(rtn[1], 1) : "–",
+        rtn.length === 3 ? fmt(rtn[2], 1) : "–"];
+    }));
 
   // 飞掠信息: 天体 / rp / 低点高度 (无判定列; 颜色保留 ok/bad 语义)
   const fly = r.flybys || [];
@@ -611,6 +617,27 @@ async function renderResult(jid) {
 function tableHtml(heads, rows) {
   return `<table><tr>${heads.map(h => `<th>${h}</th>`).join("")}</tr>` +
     rows.map(row => `<tr>${row.map(c => `<td>${c}</td>`).join("")}</tr>`).join("") + "</table>";
+}
+
+function dsmArrowTrace(tail, unit, L, name) {
+  const [x, y, z] = tail;
+  const [ux, uy, uz] = unit;
+  const tx = x + L * ux, ty = y + L * uy, tz = z + L * uz;
+  // 任取与 unit 不平行的参考轴, 叉乘得垂直基, 用于画两条箭羽
+  let rx = 0, ry = 0, rz = 1;
+  if (Math.abs(uz) > 0.9) { rx = 1; ry = 0; rz = 0; }
+  let px = uy * rz - uz * ry, py = uz * rx - ux * rz, pz = ux * ry - uy * rx;
+  const pn = Math.hypot(px, py, pz) || 1;
+  px /= pn; py /= pn; pz /= pn;
+  const hl = 0.3 * L, hw = 0.15 * L;
+  const bx = tx - hl * ux, by = ty - hl * uy, bz = tz - hl * uz;
+  return {
+    type: "scatter3d", mode: "lines", name,
+    x: [x, tx, null, bx + hw * px, tx, bx - hw * px],
+    y: [y, ty, null, by + hw * py, ty, by - hw * py],
+    z: [z, tz, null, bz + hw * pz, tz, bz - hw * pz],
+    line: { color: "#ff5c5c", width: 4 }, hoverinfo: "name",
+  };
 }
 
 async function renderPlot(jid) {
@@ -647,10 +674,22 @@ async function renderPlot(jid) {
       name: `leg${i + 1} Lambert`, x: lm.x, y: lm.y, z: lm.z,
       line: { color: "#f78fbe", width: 3, dash: "dot" } });
     const dsm = leg.dsm || {};
-    if (dsm.x != null) traces.push({ type: "scatter3d", mode: "markers+text",
-      name: `DSM${i + 1}`, x: [dsm.x], y: [dsm.y], z: [dsm.z],
-      text: [fmt(dsm.dsm_ms, 0) + " m/s"],
-      textfont: { size: 9 }, marker: { size: 5, color: "#b56cff", symbol: "diamond" } });
+    if (dsm.x != null) {
+      let hover = `DSM${i + 1}<br>总 ${fmt(dsm.dsm_ms, 1)} m/s`;
+      const rtn = dsm.rtn;
+      if (Array.isArray(rtn) && rtn.length === 3) {
+        hover += `<br>R ${fmt(rtn[0], 1)} · T ${fmt(rtn[1], 1)} · N ${fmt(rtn[2], 1)} m/s`;
+      }
+      traces.push({ type: "scatter3d", mode: "markers+text",
+        name: `DSM${i + 1}`, x: [dsm.x], y: [dsm.y], z: [dsm.z],
+        text: [fmt(dsm.dsm_ms, 0) + " m/s"], hovertext: [hover],
+        hoverinfo: "text",
+        textfont: { size: 9 }, marker: { size: 5, color: "#b56cff", symbol: "diamond" } });
+    }
+    if (state.showDsmDir && Array.isArray(dsm.unit) && dsm.unit.length === 3) {
+      traces.push(dsmArrowTrace([dsm.x, dsm.y, dsm.z], dsm.unit,
+        p.dsm_arrow_au || 0.3, `DSM${i + 1} 方向`));
+    }
   });
 
   Plotly.newPlot("chart", traces, {
@@ -667,6 +706,10 @@ async function renderPlot(jid) {
 }
 
 /* 下载按钮 */
+$("dsmDirToggle").addEventListener("change", (e) => {
+  state.showDsmDir = e.target.checked;
+  if (state.activeJobId) renderPlot(state.activeJobId);
+});
 $("pngDown").addEventListener("click", () => {
   if (state.activeJobId) window.open(`/api/jobs/${state.activeJobId}/trajectory.png`);
 });

@@ -14,6 +14,7 @@ import pykep as pk
 from .planets import get_planet
 
 MJD_LO, MJD_HI = -55000.0, 55000.0
+DSM_ARROW_AU = 0.3
 PERIOD = {
     "MERCURY": 88.0, "VENUS": 224.7, "EARTH": 365.25, "MARS": 687.0,
     "JUPITER": 4332.6, "SATURN": 10759.2, "URANUS": 30687.2, "NEPTUNE": 60190.0,
@@ -32,6 +33,15 @@ def _clamp(a, b):
     if b <= a:
         a, b = MJD_LO, min(MJD_LO + 365.0, MJD_HI)
     return a, b
+
+
+def _unit(vec):
+    """单位向量; 零向量返回 None."""
+    v = np.asarray(vec, dtype=float)
+    n = float(np.linalg.norm(v))
+    if n < 1e-12:
+        return None
+    return [float(v[0] / n), float(v[1] / n), float(v[2] / n)]
 
 
 def _arc_points(pla, t0, t1, N=200, units=None):
@@ -99,6 +109,8 @@ def build_plot_json(cfg, info):
 
     legs = []
     blegs, bep = info["blegs"], info["bep"]
+    vecs_all = info.get("dsm_vecs") or []
+    rtn_all = info.get("dsm_rtn") or []
     for i in range(len(epochs) - 1):
         r0, v0 = blegs[2 * i]
         t_a, t_b = bep[2 * i], bep[2 * i + 1]
@@ -107,13 +119,19 @@ def build_plot_json(cfg, info):
         r_dsm, v_dsm = blegs[2 * i + 1]
         dt_l = (epochs[i + 1] - t_b) * pk.DAY2SEC
         lam = _polyline([r_dsm, v_dsm], dt_l, mu, N=120) if dt_l > 0 else {"x": [], "y": [], "z": []}
+        dsm = {"x": float(r_dsm[0] / pk.AU), "y": float(r_dsm[1] / pk.AU),
+               "z": float(r_dsm[2] / pk.AU),
+               "iso": str(pk.epoch(t_b).to_datetime()),
+               "dsm_ms": round(info["dsm"][i], 2)}
+        if i < len(vecs_all):
+            dsm["vec"] = [float(c) for c in vecs_all[i]]
+            dsm["unit"] = _unit(vecs_all[i])
+        if i < len(rtn_all):
+            dsm["rtn"] = [float(c) for c in rtn_all[i]]
         legs.append({
             "from": cfg.seq[i], "to": cfg.seq[i + 1],
             "ballistic": bal, "lambert": lam,
-            "dsm": {"x": float(r_dsm[0] / pk.AU), "y": float(r_dsm[1] / pk.AU),
-                    "z": float(r_dsm[2] / pk.AU),
-                    "iso": str(pk.epoch(t_b).to_datetime()),
-                    "dsm_ms": round(info["dsm"][i], 2)},
+            "dsm": dsm,
         })
 
     return {
@@ -125,6 +143,7 @@ def build_plot_json(cfg, info):
         "epochs_iso": [str(pk.epoch(e).to_datetime()) for e in epochs],
         "tof_yr": round(sum(info["tofs"]) / 365.25, 4),
         "dsm_total_ms": round(info["dsm_total"], 1),
+        "dsm_arrow_au": DSM_ARROW_AU,
     }
 
 
@@ -153,6 +172,7 @@ def render_png(cfg, info, path):
                       c=BODY_COLOR.get(tag, "gray"), alpha=0.7, lw=1.2)
 
     blegs, bep = info["blegs"], info["bep"]
+    vecs_all = info.get("dsm_vecs") or []
     for i in range(len(epochs) - 1):
         r0, v0 = blegs[2 * i]
         t_a, t_b = bep[2 * i], bep[2 * i + 1]
@@ -165,6 +185,13 @@ def render_png(cfg, info, path):
             _plot_polyline(ax, [r_dsm, v_dsm], dt_l, mu, c="pink", lw=1.8, alpha=0.9)
         ax.scatter([r_dsm[0] / pk.AU], [r_dsm[1] / pk.AU], [r_dsm[2] / pk.AU],
                    c="darkviolet", marker="*", s=28, zorder=5)
+        if i < len(vecs_all):
+            u = _unit(vecs_all[i])
+            if u is not None:
+                ax.quiver([r_dsm[0] / pk.AU], [r_dsm[1] / pk.AU], [r_dsm[2] / pk.AU],
+                          [u[0]], [u[1]], [u[2]],
+                          length=DSM_ARROW_AU, normalize=True, color="crimson",
+                          arrow_length_ratio=0.25, lw=1.2, zorder=6)
 
     try:
         for pla, e in zip([get_planet(t) for t in seq], [pk.epoch(v) for v in epochs]):

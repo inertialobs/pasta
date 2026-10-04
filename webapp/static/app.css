@@ -110,6 +110,8 @@ details.main-panel > *:not(summary) { padding: 10px 14px; }
 /* ---------- 操作按钮行 ---------- */
 .actions { display: flex; gap: 8px; margin: 10px 0; flex-wrap: wrap; align-items: center; }
 .actions.center { justify-content: stretch; }
+.inline-check { display: inline-flex; align-items: center; gap: 5px; font-size: 13px;
+  color: var(--dim); cursor: pointer; }
 #runBtn { flex: 1 1 auto; width: 100%; font-size: 15px; padding: 12px 20px;
           letter-spacing: 2px; }
 button { border: 1px solid var(--line); border-radius: 6px; padding: 7px 14px;
