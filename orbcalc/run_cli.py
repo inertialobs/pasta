@@ -41,8 +41,9 @@ from .config import TrajConfig, ensure_project_name
 from .udp import TOF_UDP, DSM_UDP
 from .decode_report import report, summarize
 from .plot_data import build_plot_json, render_png
+from .selection import candidate_key, select_key
 from .stages import (phase_scan_mp, phase_refine_mp, phase_ballistic_seed_mp,
-                     compress_pass_mp, pick_best, select_key, candidate_key)
+                     compress_pass_mp, pick_best)
 from . import slog
 from .settings import settings, resolve_compute
 

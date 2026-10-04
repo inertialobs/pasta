@@ -15,11 +15,12 @@ import numpy as np
 import pykep as pk
 
 from . import slog
+from .decode_report import decode
 
 from .engines import (_run_sade_task, _build_udp, run_sade, local_refine,
                       multistart_mp, narrow_tof_box)
+from .selection import candidate_key, select_key
 from .udp import TOF_UDP, DSM_UDP
-from .decode_report import decode
 
 
 def _keep_n(pct, n):
@@ -215,34 +216,6 @@ def compress_pass_mp(executor, cfg, comp, seed_x, tag, w1, w2,
     slog.inf(f"  -> TOF={sum(info['tofs']):.0f} d ({sum(info['tofs']) / 365.25:.2f} yr)  "
              f"DSM={info['dsm_total']:.0f} m/s")
     return x
-
-
-def select_key(cfg, info):
-    """最终选解键 (与 cfg.objective 对齐): (DSM 超限惩罚, 主目标, 总 TOF).
-
-    - min_tof : 可行解中 TOF 最小 (与原行为一致)
-    - min_dsm : 可行解中总 DSM 最小
-    - custom  : 可行解中 w_tof*TOF + w_dsm*DSM 最小
-    """
-    tof = float(sum(info["tofs"]))
-    dsm = float(info["dsm_total"])
-    feasible = 0 if dsm <= cfg.dsm_limit_ms else 1
-    if cfg.objective == "min_dsm":
-        return (feasible, dsm, tof)
-    if cfg.objective == "custom":
-        w = cfg.objective_weights
-        return (feasible, float(w[0]) * tof + float(w[1]) * dsm, tof)
-    return (feasible, tof, 0.0)
-
-
-def candidate_key(cfg, x, udp):
-    """安全 decode 并返回 (select_key, info)；单个候选失败时返回最差键与 None。"""
-    try:
-        info = decode(x, udp.udp)
-        return select_key(cfg, info), info
-    except Exception as e:
-        slog.wrn(f"[stages] decode failed for one candidate, treating as worst: {e}")
-        return (1, 1e18, 1e18), None
 
 
 def pick_best(cfg, candidates):
