@@ -54,14 +54,14 @@ class TOF_UDP:
         try:
             DV, _, _, _, _ = self.udp._compute_dvs(list(x))
         except Exception:
-            return [1e9]
+            return [1e12]
         n = self.udp.n_legs
         tof = float(sum(x[5 + 4 * i] for i in range(n)))
         dsm = float(sum(DV[:n]))
         vinf_l = float(x[3])
         vinf_a = float(DV[-1]) if len(DV) > n else 0.0
         if not (np.isfinite(dsm) and np.isfinite(vinf_l) and np.isfinite(vinf_a)):
-            return [1e9]                       # Lambert 不可行 -> 巨大惩罚
+            return [1e12]                       # Lambert 不可行 -> 巨大惩罚
         pen_dsm = self.w1 * max(0.0, dsm - self.cfg.dsm_limit_ms) \
                   + self.w2 * max(0.0, dsm - self.cfg.dsm_limit_ms) ** 2
         pen = pen_dsm \
@@ -106,13 +106,13 @@ class DSM_UDP:
         try:
             DV, _, _, _, _ = self.udp._compute_dvs(list(x))
         except Exception:
-            return [1e9]
+            return [1e12]
         n = self.udp.n_legs
         dsm = float(sum(DV[:n]))
         vinf_l = float(x[3])
         vinf_a = float(DV[-1]) if len(DV) > n else 0.0
         if not (np.isfinite(dsm) and np.isfinite(vinf_l) and np.isfinite(vinf_a)):
-            return [1e9]
+            return [1e12]
         return [dsm + self.cfg.wl * max(0.0, vinf_l - self.cfg.vinf_launch_limit_ms) ** 2
                 + self.cfg.wa * max(0.0, vinf_a - self.cfg.vinf_arrival_limit_ms) ** 2]
 

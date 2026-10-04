@@ -52,23 +52,34 @@ CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 
 def _kill_tree(pid: int) -> None:
     """整棵进程树终止 (含 multiprocessing 池 workers 等子进程).
-    Windows 用 taskkill /T /F; 其他平台向子进程组发 SIGTERM
+    Windows 用 taskkill /T /F; POSIX 先 SIGTERM, 短暂等待后若仍存活则 SIGKILL。
     (子进程以 start_new_session=True 启动, 故其 pgid == pid)。"""
     if os.name == "nt":
         try:
             subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
                            capture_output=True, timeout=10)
-            return
         except Exception:
             pass
-    else:
-        try:
-            os.killpg(pid, signal.SIGTERM)
-            return
-        except Exception:
-            pass
+        return
+    # POSIX: 进程组 SIGTERM, 等待后若仍存活则 SIGKILL
     try:
-        os.kill(pid, signal.SIGTERM)
+        os.killpg(pid, signal.SIGTERM)
+    except Exception:
+        pass
+    for _ in range(20):
+        try:
+            os.killpg(pid, 0)          # 探测进程组是否仍存在
+        except ProcessLookupError:
+            return
+        except Exception:
+            break
+        time.sleep(0.05)
+    try:
+        os.killpg(pid, signal.SIGKILL)
+    except Exception:
+        pass
+    try:
+        os.kill(pid, signal.SIGKILL)
     except Exception:
         pass
 
@@ -217,19 +228,22 @@ class JobManager:
             except Exception:
                 pass
         result_path = Path(job["dir"]) / "result.json"
-        if result_path.exists():
-            # result.json 是权威: run_cli 正常收尾总会写 (ok/no_candidates/
-            # cancelled/error), 口径与 _disk_status / 历史任务一致。
-            # 注: 已知 pykep/OpenBLAS 在部分父进程上下文下于解释器退出期崩溃
-            # (rc=-6, "corrupted double-linked list"), 此时其实已写完结果;
-            # 故此处以结果文件为准, 不再依赖 rc。退出期崩溃本身尚未处理。
-            job["status"] = self._disk_status(Path(job["dir"]))
-        elif job.get("cancelled"):
-            # 无结果时才看 cancel 标志: taskkill /F 退出码非 130, 不能只看 rc
-            job["status"] = "cancelled"
-        elif rc == 130:
-            job["status"] = "cancelled"
-        else:
+        try:
+            if result_path.exists():
+                # result.json 是权威: run_cli 正常收尾总会写 (ok/no_candidates/
+                # cancelled/error), 口径与 _disk_status / 历史任务一致。
+                # 注: 已知 pykep/OpenBLAS 在部分父进程上下文下于解释器退出期崩溃
+                # (rc=-6, "corrupted double-linked list"), 此时其实已写完结果;
+                # 故此处以结果文件为准, 不再依赖 rc。退出期崩溃本身尚未处理。
+                job["status"] = self._disk_status(Path(job["dir"]))
+            elif job.get("cancelled"):
+                # 无结果时才看 cancel 标志: taskkill /F 退出码非 130, 不能只看 rc
+                job["status"] = "cancelled"
+            elif rc == 130:
+                job["status"] = "cancelled"
+            else:
+                job["status"] = "failed"
+        except OSError:
             job["status"] = "failed"
         job["rc"] = rc
         slog.inf(f"[job] end jid={jid} status={job['status']} rc={rc} "
@@ -261,17 +275,21 @@ class JobManager:
             return None
         cfg = {}
         rf = d / "request.json"
-        if rf.exists():
-            try:
+        try:
+            if rf.exists():
                 cfg = json.loads(rf.read_text(encoding="utf-8")) or {}
-            except Exception:
-                cfg = {}
+        except (OSError, ValueError):
+            cfg = {}
         # request.json 内容就是扁平 config (submit 时 json.dump(config_dict))
         try:
             all_lines = (d / "log.txt").read_text(
                 encoding="utf-8", errors="replace").splitlines()
-        except Exception:
+        except (OSError, ValueError):
             all_lines = []
+        try:
+            has_result = (d / "result.json").exists()
+        except OSError:
+            has_result = False
         return {
             "job_id": jid,
             "name": cfg.get("name", jid),
@@ -280,7 +298,7 @@ class JobManager:
             "jobs": cfg.get("jobs"),
             "dir": str(d),
             "elapsed_s": None,
-            "has_result": (d / "result.json").exists(),
+            "has_result": has_result,
             "log_tail": all_lines[-250:],
             "log_len": len(all_lines),
         }
@@ -306,14 +324,26 @@ class JobManager:
         if "started" in out:
             end = out.get("finished", time.time())
             out["elapsed_s"] = round(end - out["started"], 1)
+        # 删除可能随时发生，读文件前必须容忍目录消失
+        if not d.is_dir():
+            return None
+
         result_path = d / "result.json"
-        out["has_result"] = result_path.exists()
+        try:
+            out["has_result"] = result_path.exists()
+        except OSError:
+            out["has_result"] = False
+
         log_path = d / "log.txt"
-        if log_path.exists():
-            lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
-            out["log_tail"] = lines[-250:]
-            out["log_len"] = len(lines)
-        else:
+        try:
+            if log_path.exists():
+                lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+                out["log_tail"] = lines[-250:]
+                out["log_len"] = len(lines)
+            else:
+                out["log_tail"] = []
+                out["log_len"] = 0
+        except OSError:
             out["log_tail"] = []
             out["log_len"] = 0
         return out
@@ -380,6 +410,36 @@ class JobManager:
                 self.cancel(jid)
             except Exception:
                 pass
+
+    def _wait_for_running(self, timeout: float = 10.0) -> None:
+        """等待所有运行中子进程退出；超时后再次强制杀。"""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            alive = []
+            with self._lock:
+                for job in self._jobs.values():
+                    proc = job.get("proc")
+                    if proc is not None and proc.poll() is None:
+                        alive.append(proc)
+            if not alive:
+                return
+            for proc in alive:
+                try:
+                    remaining = deadline - time.time()
+                    if remaining <= 0:
+                        break
+                    proc.wait(timeout=remaining)
+                except Exception:
+                    pass
+        # 超时：再次强制杀仍存活的进程
+        with self._lock:
+            for job in self._jobs.values():
+                proc = job.get("proc")
+                if proc is not None and proc.poll() is None:
+                    try:
+                        _kill_tree(proc.pid)
+                    except Exception:
+                        pass
 
     def delete(self, jid: str) -> bool:
         """从列表与磁盘彻底删除任务 (运行中先终止, 排队中移除).
