@@ -1,0 +1,7 @@
+# 禁止创建空白 Issue，并引导用户查看文档。
+# Disable blank issues and point users to docs.
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation / 文档
+    url: https://github.com/inertialobs/pasta#readme
+    about: Check the README first / 请先阅读 README
