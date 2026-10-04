@@ -129,7 +129,7 @@ def run(args):
                 if comp["run_seed"]:
                     slog.inf("[phase] [3/6] ballistic seed")
                     x_seed = phase_ballistic_seed_mp(ex, cfg, comp, x_ref)
-                    candidates.append((x_seed, DSM_UDP(cfg, t0=[x_seed[0] - 30, x_seed[0] + 30])))
+                    candidates.append((x_seed, DSM_UDP(cfg)))
 
             if (comp["run_compress"] or comp["run_frontier"]) and candidates:
                 def _key(item):
@@ -142,14 +142,14 @@ def run(args):
                     for k, (sx, sudp) in enumerate(seeds):
                         xw = compress_pass_mp(ex, cfg, comp, sx, f"4/6 compress wide #{k + 1}",
                                               cfg.penalty[0], cfg.penalty[1], pct=0.25)
-                        candidates.append((xw, TOF_UDP(cfg, t0=[sx[0] - 30, sx[0] + 30])))
+                        candidates.append((xw, TOF_UDP(cfg)))
                 if comp["run_frontier"]:
                     slog.inf("[phase] [5/6] frontier tight compress")
                     bi, bx, budp = pick_best(cfg, candidates)
                     xf = compress_pass_mp(ex, cfg, comp, bx, "5/6 frontier tight",
                                           cfg.frontier_penalty[0],
                                           cfg.frontier_penalty[1], pct=0.12)
-                    candidates.append((xf, TOF_UDP(cfg, t0=[xf[0] - 30, xf[0] + 30])))
+                    candidates.append((xf, TOF_UDP(cfg)))
 
         if not candidates:
             slog.wrn("[main] no candidates")

@@ -17,6 +17,10 @@ from .planets import build_seq
 
 def _make_trajopt(cfg, t0, tof, vinf, add_vinf_dep=False, add_vinf_arr=True):
     seq, _ = build_seq(cfg)
+    if t0 is None:
+        # decode-only 场景: 用 era 全跨度作为占位边界, 不影响 _compute_dvs
+        era = cfg.era_set.ranges
+        t0 = [era[0][0], era[-1][1]]
     return pk.trajopt.mga_1dsm(
         seq=seq, tof_encoding="direct",
         t0=[float(t0[0]), float(t0[1])],
@@ -29,8 +33,11 @@ def _make_trajopt(cfg, t0, tof, vinf, add_vinf_dep=False, add_vinf_arr=True):
 
 
 class TOF_UDP:
-    def __init__(self, cfg, t0, tof=None, w1=None, w2=None):
+    def __init__(self, cfg, t0=None, tof=None, w1=None, w2=None):
         self.cfg = cfg
+        if t0 is None:
+            era = cfg.era_set.ranges
+            t0 = [era[0][0], era[-1][1]]
         self.t0 = [float(t0[0]), float(t0[1])]
         self.tof = tof
         self.w1 = cfg.penalty[0] if w1 is None else w1
@@ -90,8 +97,11 @@ class TOF_UDP:
 class DSM_UDP:
     """弹道播种用: 目标 = 总 DSM (用于生成低 DSM 种子解 / 前端 min_dsm 模式)."""
 
-    def __init__(self, cfg, t0, tof=None):
+    def __init__(self, cfg, t0=None, tof=None):
         self.cfg = cfg
+        if t0 is None:
+            era = cfg.era_set.ranges
+            t0 = [era[0][0], era[-1][1]]
         self.t0 = [float(t0[0]), float(t0[1])]
         self.tof = tof
         self.udp = _make_trajopt(cfg, t0, tof, cfg.vinf_bounds_kmps)
