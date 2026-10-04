@@ -47,15 +47,6 @@ if sys.platform == 'win32':
         (os.path.join(pykep_dir, 'pykep/lib'),     'pykep/lib'),      # DLL
     ]
 
-# ---- 让 pykep 测试套件在冻结环境可发现(unittest.discover 需要物理文件)----
-# import glob as _glob
-# _test_root = os.path.join(pykep_dir, 'pykep')
-# for _f in _glob.glob(os.path.join(_test_root, 'test_*.py')):
-#     datas.append((_f, 'pykep'))
-# _ini = os.path.join(_test_root, '__init__.py')
-# if os.path.exists(_ini):
-#     datas.append((_ini, 'pykep'))
-
 # ---- pygmo(如应用 import pygmo)----
 # lib/ 仅 Windows wheel 有; Linux 的 pygmo.libs 由 ELF 依赖分析自动收集。
 try:
@@ -92,7 +83,6 @@ if sys.platform == 'win32':
         _p = os.path.join(sys32, _dll)
         if os.path.exists(_p):
             binaries.append((_p, '.'))
-#datas = [i for i in datas if os.path.exists(i)]
 
 # ---- 生成构建元数据 _build_info.py (gitignore 产物, 供 _version.py 导入) ----
 # git 缺失 / 无 .git 时全部字段回落 None, 构建不失败。

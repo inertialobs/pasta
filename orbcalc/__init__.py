@@ -27,8 +27,6 @@ for _blas_var in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS",
                   "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
     os.environ.setdefault(_blas_var, "1")
 
-__version__ = "0.1.0"
-
 # 轨迹字段: seq/eras/tof_bounds 的值来自预设 (运行时加载), 故仅登记键名
 TRAJ_PRESET_KEYS = ("seq", "eras", "tof_bounds")
 TRAJ_DEFAULTS = {

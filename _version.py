@@ -11,7 +11,7 @@ except ImportError:
 
 
 def describe() -> str:
-    """形如 '0.1.0 a1+096b4ac' / '0.1.0 a1+096b4ac.dirty' / '0.1.0 a1'。"""
+    """形如 '0.1.0+abc1234' / '0.1.0+abc1234.dirty' / '0.1.0'。"""
     if commit:
         return f"{__version__}+{commit}{'.dirty' if dirty else ''}"
     return __version__
