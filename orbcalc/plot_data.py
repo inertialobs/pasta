@@ -11,9 +11,10 @@ from __future__ import annotations
 import numpy as np
 import pykep as pk
 
+from . import MJD2000_MAX, MJD2000_MIN
 from .planets import get_planet
 
-MJD_LO, MJD_HI = -55000.0, 55000.0
+MJD_LO, MJD_HI = MJD2000_MIN, MJD2000_MAX
 DSM_ARROW_AU = 0.3
 PERIOD = {
     "MERCURY": 88.0, "VENUS": 224.7, "EARTH": 365.25, "MARS": 687.0,

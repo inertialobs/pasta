@@ -14,8 +14,10 @@ from __future__ import annotations
 
 import datetime
 
+from . import MJD2000_MAX, MJD2000_MIN
+
 _EPOCH0 = datetime.date(2000, 1, 1)
-_EPH_LO, _EPH_HI = -54000.0, 54000.0     # de440s 星历覆盖 (~1849-2150)
+_EPH_LO, _EPH_HI = MJD2000_MIN, MJD2000_MAX     # de440s 星历覆盖 (~1849-2150)
 
 
 class EraSet:
@@ -91,8 +93,7 @@ class EraSet:
             raise ValueError(f"step 应为正数, 实际 {step!r}")
         out = []
         for lo, hi in self.ranges:
-            t = lo
-            while t <= hi:
-                out.append(t)
-                t += step
+            n = int((hi - lo) / step)
+            for i in range(n + 1):
+                out.append(lo + i * step)
         return out
