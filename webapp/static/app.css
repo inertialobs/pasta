@@ -170,7 +170,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
               border-radius: 6px; padding: 8px; font-size: 11.5px; white-space: pre-wrap; }
 
 /* ---------- 结果卡片: 行1 三卡 + 行2 左右双卡 ---------- */
-.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
 .card { border: 1px solid var(--line); border-radius: 8px; padding: 8px; text-align: center; }
 .card .k { font-size: 11px; color: var(--dim); }
 .card .v { font-size: 14px; font-weight: 700; margin-top: 2px; }

@@ -653,14 +653,22 @@ async function renderPlot(jid) {
   traces.push({ type: "scatter3d", mode: "markers",
     x: p.sun.x, y: p.sun.y, z: p.sun.z, name: "Sun",
     marker: { size: 5, color: "#ffd75e" } });
-  (p.bodies || []).forEach(b => {
+  (p.bodies || []).forEach((b, bi) => {
     traces.push({ type: "scatter3d", mode: "lines", name: b.tag,
       x: b.orbit.x, y: b.orbit.y, z: b.orbit.z,
       line: { color: b.color, width: 2 }, opacity: 0.6 });
-    (b.encounters || []).forEach(en => {
+    (b.encounters || []).forEach((en, ei) => {
+      const when = (en.iso || "").slice(0, 10);
+      const isDeparture = bi === 0 && ei === 0;
+      const c3txt = (isDeparture && p.c3 != null)
+        ? `\nC3=${fmt(p.c3, 2)} km²/s²` : "";
+      // 悬停只显示 星体+时间(+出发点 C3), 不再显示 x/y/z 坐标
+      const hover = `${b.tag}${when ? "  " + when : ""}` +
+        (isDeparture && p.c3 != null ? `  C3=${fmt(p.c3, 2)} km²/s²` : "");
       traces.push({ type: "scatter3d", mode: "markers+text", name: b.tag + " 交会",
         x: [en.x], y: [en.y], z: [en.z],
-        text: [b.tag + "\n" + (en.iso || "").slice(0, 10)],
+        text: [`${b.tag}\n${when}${c3txt}`],
+        hovertext: [hover], hoverinfo: "text",
         textfont: { size: 9 }, marker: { size: 3.5, color: b.color } });
     });
   });

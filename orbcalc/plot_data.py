@@ -135,6 +135,7 @@ def build_plot_json(cfg, info):
             "dsm": dsm,
         })
 
+    vinf_launch = info.get("vinf_launch")
     return {
         "name": cfg.name,
         "units": "AU",
@@ -144,6 +145,7 @@ def build_plot_json(cfg, info):
         "epochs_iso": [str(pk.epoch(e).to_datetime()) for e in epochs],
         "tof_yr": round(sum(info["tofs"]) / 365.25, 4),
         "dsm_total_ms": round(info["dsm_total"], 1),
+        "c3": round((vinf_launch / 1000.0) ** 2, 3) if vinf_launch is not None else None,
         "dsm_arrow_au": DSM_ARROW_AU,
     }
 
