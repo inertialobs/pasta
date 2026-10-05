@@ -9,6 +9,10 @@ import pytest
 
 from webapp.app import JobManager
 
+# 这些测试通过 JobManager.submit() -> TrajConfig.validate() -> orbcalc.planets
+# 间接依赖 pykep；在 Linux 无 pykep 环境下必须 deselect。
+pytestmark = pytest.mark.requires_pykep
+
 
 @pytest.fixture
 def manager(tmp_path, monkeypatch):
