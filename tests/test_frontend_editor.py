@@ -57,36 +57,38 @@ def test_add_move_and_delete_body_keeps_sequence_and_tof_legs_aligned(editor_pag
     original_seq = original["seq"]
     original_bounds = original["tof_bounds"]
 
+    # 行为变更: 新节点追加到末尾 (成为新的“到达”)
     page.locator("#nodeAdd").click()
     added = read_config(page)
-    expected = original_seq[:-1] + ["VENUS", original_seq[-1]]
+    expected = original_seq + ["VENUS"]
     assert added["seq"] == expected
     assert len(added["tof_bounds"]) == len(expected) - 1
     assert added["tof_bounds"][:len(original_bounds)] == original_bounds
     assert_roles_and_leg_labels(page, expected)
 
-    inserted_index = len(expected) - 2
-    inserted = page.locator("#seqNodes .node-row").nth(inserted_index)
-    inserted.locator('select[data-k="tag"]').select_option("MARS")
-    expected[inserted_index] = "MARS"
+    last_index = len(expected) - 1
+    last = page.locator("#seqNodes .node-row").nth(last_index)
+    last.locator('select[data-k="tag"]').select_option("MARS")
+    expected[last_index] = "MARS"
     assert read_config(page)["seq"] == expected
     assert_roles_and_leg_labels(page, expected)
 
-    # Move the inserted node across Jupiter and verify that visible labels and
-    # the serialized sequence move together.
-    inserted = page.locator("#seqNodes .node-row").nth(inserted_index)
-    inserted.locator(".node-move.up").click()
-    expected[inserted_index - 1], expected[inserted_index] = expected[inserted_index], expected[inserted_index - 1]
+    # 原“到达”现在变成飞掠, 验证移动后可见标签与序列号同步
+    flyby_index = len(expected) - 2
+    moved = page.locator("#seqNodes .node-row").nth(flyby_index)
+    moved.locator(".node-move.up").click()
+    expected[flyby_index - 1], expected[flyby_index] = expected[flyby_index], expected[flyby_index - 1]
     assert read_config(page)["seq"] == expected
     assert_roles_and_leg_labels(page, expected)
 
-    inserted = page.locator("#seqNodes .node-row").nth(inserted_index - 1)
-    inserted.locator(".node-move.dn").click()
-    expected[inserted_index - 1], expected[inserted_index] = expected[inserted_index], expected[inserted_index - 1]
+    moved = page.locator("#seqNodes .node-row").nth(flyby_index - 1)
+    moved.locator(".node-move.dn").click()
+    expected[flyby_index - 1], expected[flyby_index] = expected[flyby_index], expected[flyby_index - 1]
     assert read_config(page)["seq"] == expected
     assert_roles_and_leg_labels(page, expected)
 
-    page.locator("#seqNodes .node-row").nth(inserted_index).locator(".node-del").click()
+    # 删除追加的末尾节点, 恢复原始序列与 TOF 边界
+    page.locator("#seqNodes .node-row").nth(last_index).locator(".node-del").click()
     final = read_config(page)
     assert final["seq"] == original_seq
     assert final["tof_bounds"] == original_bounds

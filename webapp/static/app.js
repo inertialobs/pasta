@@ -283,7 +283,6 @@ function collectConfig() {
 $("nodeAdd").addEventListener("click", () => {
   const rows = [...document.querySelectorAll("#seqNodes .node-row")];
   if (rows.length >= 10) { alert("序列最多 10 个节点"); return; }
-  const arrive = rows[rows.length - 1];
   const row = document.createElement("div");
   row.className = "node-row flyby";
   row.innerHTML = `
@@ -298,7 +297,7 @@ $("nodeAdd").addEventListener("click", () => {
       <button class="node-move dn" title="下移">↓</button>
     </span>
     <button class="node-del" title="删除节点">✕</button>`;
-  arrive.parentNode.insertBefore(row, arrive);
+  $("seqNodes").appendChild(row);   // 行为变更: 追加到末尾 (新节点成为到达)
   refreshSeqRoles();
   updateConfigJson();
 });
