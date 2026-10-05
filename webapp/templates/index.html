@@ -43,7 +43,7 @@
     <!-- 任务名 单独一行 (不属于任何子块) -->
     <div class="field wide"><label>任务名</label><input id="cfgName" class="wide" value="" placeholder="Auto-generated"></div>
 
-    <!-- ===== 子块 1: 任务序列配置 (可折叠) ===== -->
+    <!-- ===== 子块 1: 任务序列配置 ===== -->
     <details class="main-panel" open>
       <summary>任务序列配置</summary>
       <div class="preset-inline">
@@ -53,12 +53,12 @@
         <button id="presetSave" class="ghost">保存</button>
       </div>
       <fieldset>
-        <legend>行星序列 (节点编辑器)</legend>
+        <legend>行星序列</legend>
         <div id="seqNodes" class="seq-nodes"></div>
         <div class="actions"><button id="nodeAdd" class="ghost">+ 添加节点</button></div>
       </fieldset>
       <fieldset>
-        <legend>每腿 TOF 边界 (天)</legend>
+        <legend>每腿 TOF 边界</legend>
         <div id="tofTable"></div>
       </fieldset>
       <fieldset>
@@ -67,7 +67,7 @@
           <select id="cfgObjective" class="wide">
             <option value="min_tof">最短飞行时间 (min TOF)</option>
             <option value="min_dsm" selected>最小总 DSM (min DSM)</option>
-            <option value="custom">自定义 (权重 + 惩罚系数)</option>
+            <option value="custom">自定义</option>
           </select>
         </div>
         <div id="customWrap" class="checks hidden">
@@ -76,15 +76,15 @@
           <label>L1 惩罚系数 <input id="cfgPenL1" type="number" value="10" step="1" min="0"></label>
           <label>L2 惩罚系数 <input id="cfgPenL2" type="number" value="0.2" step="0.1" min="0"></label>
         </div>
-        <div class="field"><label>DSM 上限 (m/s)</label><input id="cfgDsmLimit" type="number" value="600" step="10"></div>
-        <div class="field"><label>发射 v∞ (km/s)</label>
+        <div class="field"><label>DSM 上限</label><input id="cfgDsmLimit" type="number" value="600" step="10"></div>
+        <div class="field"><label>v∞ (km/s)</label>
           <input id="cfgVinfL" type="number" value="3.5" step="0.1"> ~
           <input id="cfgVinfH" type="number" value="6.0" step="0.1"></div>
-        <div class="field"><label>eta 范围</label>
+        <div class="field"><label>eta</label>
           <input id="cfgEtaL" type="number" value="0.01" step="0.01"> ~
           <input id="cfgEtaH" type="number" value="0.9" step="0.01"></div>
-        <div class="field"><label>飞掠 rp 全局上界 (×R)</label><input id="cfgRpUb" type="number" value="200" step="1"></div>
-        <div class="field"><label>前沿罚系数 (L1/L2)</label>
+        <div class="field"><label>rp 上界 (×R)</label><input id="cfgRpUb" type="number" value="200" step="1"></div>
+        <div class="field"><label>前沿罚 L1/L2</label>
           <input id="cfgFPenL1" type="number" value="30" step="1" min="0"> ~
           <input id="cfgFPenL2" type="number" value="2" step="0.1" min="0"></div>
       </fieldset>
@@ -95,9 +95,9 @@
       </fieldset>
     </details>
 
-    <!-- ===== 子块 2: 计算配置 (可折叠) ===== -->
+    <!-- ===== 子块 2: 计算配置 ===== -->
     <details class="main-panel" open>
-      <summary>⚙ 计算配置</summary>
+      <summary>计算配置</summary>
       <fieldset>
         <legend>流水线与模式</legend>
         <div class="checks">
@@ -109,11 +109,11 @@
       </fieldset>
       <fieldset>
         <legend>并行与搜索</legend>
-        <div class="field"><label>并行进程 jobs</label><input id="cfgJobs" type="number" min="1" max="256"></div>
-        <div class="field"><label>搜索步进 (天)</label><input id="cfgEraStep" type="number" value="60" min="1" max="365"></div>
-        <div class="field"><label>扫描保留比例 (%)</label>
+        <div class="field"><label>jobs</label><input id="cfgJobs" type="number" min="1" max="256"></div>
+        <div class="field"><label>步进 (d)</label><input id="cfgEraStep" type="number" value="60" min="1" max="365"></div>
+        <div class="field"><label>扫描保留 %</label>
           <div class="range-wrap"><input id="cfgScanKeepPct" type="range" min="1" max="100" step="1" value="80"><output id="cfgScanKeepPctOut">80</output></div></div>
-        <div class="field"><label>细化保留比例 (%)</label>
+        <div class="field"><label>细化保留 %</label>
           <div class="range-wrap"><input id="cfgRefineKeepPct" type="range" min="1" max="100" step="1" value="80"><output id="cfgRefineKeepPctOut">80</output></div></div>
       </fieldset>
     </details>
@@ -127,7 +127,7 @@
     <textarea id="cfgJsonBox" rows="7" readonly placeholder="配置 JSON 预览…"></textarea>
   </section>
 
-  <!-- ================= 右: 日志 / 结果 双 tab ================= -->
+  <!-- ================= 右: 日志 / 结果 ================= -->
   <section class="panel right">
     <div class="tabs">
       <button id="tabLog" class="tab active">日志</button>

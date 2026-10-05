@@ -16,8 +16,9 @@ def assert_roles_and_leg_labels(page, seq):
     assert [nodes.nth(i).locator(".node-idx").inner_text() for i in range(len(seq))] == [
         str(i + 1) for i in range(len(seq))
     ]
-    roles = [nodes.nth(i).locator(".node-role").inner_text() for i in range(len(seq))]
-    assert roles == ["出发"] + ["飞掠"] * (len(seq) - 2) + ["到达"]
+    classes = [nodes.nth(i).get_attribute("class") for i in range(len(seq))]
+    expected_roles = ["depart"] + ["flyby"] * (len(seq) - 2) + ["arrive"]
+    assert classes == [f"node-row {r}" for r in expected_roles]
 
     rows = page.locator("#tofTable table tr")
     assert rows.count() == len(seq)  # header + one row per adjacent-node leg

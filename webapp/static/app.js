@@ -115,7 +115,6 @@ function buildSeqEditor(seq, tofBounds) {
     row.innerHTML = `
       <span class="node-idx">${i + 1}</span>
       <select data-k="tag">${planetOptions(tag)}</select>
-      <span class="node-role ${role}">${role === "depart" ? "出发" : role === "arrive" ? "到达" : "飞掠"}</span>
       <span class="node-settings" data-k="settings">
         <span class="node-safe">${PLANETS[tag] ? PLANETS[tag].note : ""}</span>
       </span>
@@ -145,9 +144,6 @@ function refreshSeqRoles() {
     row.dataset.i = i;
     const idxSpan = row.querySelector(".node-idx");
     if (idxSpan) idxSpan.textContent = i + 1;
-    const roleSpan = row.querySelector(".node-role");
-    roleSpan.className = "node-role " + role;
-    roleSpan.textContent = role === "depart" ? "出发" : role === "arrive" ? "到达" : "飞掠";
     const current = row.querySelector(".node-settings");
     current.innerHTML = "";
     const tag = row.querySelector('select[data-k="tag"]').value;
@@ -288,7 +284,6 @@ $("nodeAdd").addEventListener("click", () => {
   row.innerHTML = `
     <span class="node-idx">${rows.length}</span>
     <select data-k="tag">${planetOptions("VENUS")}</select>
-    <span class="node-role flyby">飞掠</span>
     <span class="node-settings">
       <span class="node-safe">${PLANETS.VENUS.note}</span>
     </span>
@@ -403,6 +398,13 @@ function updateConfigJson() {
   }));
 document.addEventListener("input", e => {
   if (e.target.closest("#tofTable") || e.target.closest("#eraTable")) updateConfigJson();
+});
+// 取消数字输入框的上下键调值 (保留 spinners 移除的 CSS 效果)
+document.addEventListener("keydown", e => {
+  if (e.target.matches('input[type="number"]') &&
+      (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+    e.preventDefault();
+  }
 });
 $("saveCfg").addEventListener("click", () => {
   const blob = new Blob([$("cfgJsonBox").value], { type: "application/json" });
@@ -585,7 +587,7 @@ async function renderResult(jid) {
       <div class="v">${r.arrival_iso ? r.arrival_iso.slice(0, 10) : "–"} · v∞ ${fmt(r.vinf_arrival_kmps, 3)} km/s</div></div>`;
 
   const legs = r.legs || [];
-  $("legTable").innerHTML = "<h3>每腿</h3>" + tableHtml(
+  $("legTable").innerHTML = "<h3>转移信息</h3>" + tableHtml(
     ["从", "到", "TOF (d)", "DSM (m/s)", "eta", "R (m/s)", "T (m/s)", "N (m/s)"],
     legs.map(l => {
       const rtn = l.dsm_rtn_ms || [];

@@ -24,9 +24,8 @@ header .sub { color: var(--dim); font-size: 13px; line-height: 16px; margin-top:
 .hidden { display: none !important; }
 
 /* ---------- 三栏布局 ---------- */
-.layout { display: grid; grid-template-columns: 260px 380px 1fr; gap: 14px; padding: 14px; }
-/* 折叠后留 28px 窄条 (只保留展开按钮), 防止按钮本身被挤出无法恢复 */
-.layout.side-collapsed { grid-template-columns: 28px 380px 1fr; }
+.layout { display: grid; grid-template-columns: 260px 355px 1fr; gap: 14px; padding: 14px; }
+.layout.side-collapsed { grid-template-columns: 28px 355px 1fr; }
 .layout.side-collapsed .sidebar { padding: 10px 4px; }
 .layout.side-collapsed .sidebar-head h2,
 .layout.side-collapsed .job-list,
@@ -43,7 +42,7 @@ header .sub { color: var(--dim); font-size: 13px; line-height: 16px; margin-top:
 .layout.side-collapsed #sidebarToggle { transform: rotate(180deg); }
 .job-list { max-height: calc(100vh - 220px); overflow: auto; min-height: 80px; }
 
-/* ---------- 任务列表项: 行1 任务名 + 行2 小字时间戳 ---------- */
+/* ---------- 任务列表项 ---------- */
 .job-item { padding: 5px 8px; margin: 3px 0; border: 1px solid var(--line);
             border-radius: 6px; cursor: pointer; font-size: 12px; }
 .job-item.active { border-color: var(--acc); background: #1a2742; }
@@ -66,14 +65,18 @@ header .sub { color: var(--dim); font-size: 13px; line-height: 16px; margin-top:
 /* ---------- 面板 / 字段通用 ---------- */
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
 .panel h2 { margin: 0 0 10px; font-size: 15px; color: var(--acc); }
-.field { display: flex; align-items: center; gap: 8px; margin: 6px 0; flex-wrap: wrap; }
+.field { display: flex; align-items: center; gap: 6px; margin: 6px 0; flex-wrap: wrap;}
 .field.wide label { width: auto; }
-.field label { width: 130px; font-size: 13px; color: var(--dim); flex-shrink: 0; }
+.field label { width: 88px; font-size: 13px; color: var(--dim); flex-shrink: 0; }
 .field input, .field select {
   background: #0c121f; color: var(--txt); border: 1px solid var(--line);
-  border-radius: 6px; padding: 5px 8px; font-size: 13px; width: 84px;
+  border-radius: 6px; padding: 5px 8px; font-size: 13px; width: 78px;
 }
-.field input.wide, .field select.wide { width: 240px; }
+.field input.wide, .field select.wide { width: 200px; }
+/* 去掉数字输入框的上下箭头 (键盘上下键调整另由 JS 拦截) */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
 .field input[type="date"] { width: 150px; }
 .range-wrap { display: flex; align-items: center; gap: 8px; }
 .range-wrap input[type="range"] { width: 180px; padding: 0; }
@@ -86,7 +89,8 @@ fieldset { border: 1px solid var(--line); border-radius: 8px; margin: 8px 0; pad
 legend { font-size: 12px; color: var(--dim); }
 .hint { font-size: 11.5px; color: var(--dim); margin: 4px 0; }
 
-/* ---------- 预设行 (内嵌于两大子块) ---------- */
+#cfgName { flex: 1 1 auto; width: auto; min-width: 0; }
+/* ---------- 预设行 ---------- */
 .preset-inline { display: flex; align-items: center; gap: 8px; margin: 6px 0 10px; flex-wrap: nowrap; }
 .preset-inline label { width: auto; font-size: 12.5px; color: var(--dim); flex-shrink: 0; }
 .preset-inline select { flex: 1; min-width: 0; background: #0c121f; color: var(--txt);
@@ -94,7 +98,7 @@ legend { font-size: 12px; color: var(--dim); }
                         padding: 5px 8px; font-size: 13px; }
 
 
-/* ---------- 任务配置两大子块 (可折叠) ---------- */
+/* ---------- 任务配置两大子块 ---------- */
 details.main-panel { border: 1px solid var(--line); border-radius: 10px; margin: 10px 0;
                      background: var(--panel); overflow: hidden; }
 details.main-panel > summary { cursor: pointer; padding: 10px 14px; font-size: 14px;
@@ -109,7 +113,7 @@ details.main-panel > *:not(summary) { padding: 10px 14px; }
 /* ---------- 操作按钮行 ---------- */
 .actions { display: flex; gap: 8px; margin: 10px 0; flex-wrap: wrap; align-items: center; }
 .actions.center { justify-content: stretch; }
-#nodeAdd, #eraAdd { width: 100%; }   /* 与上方节点/窗口控件等宽 */
+#nodeAdd, #eraAdd { width: 100%; } 
 .inline-check { display: inline-flex; align-items: center; gap: 5px; font-size: 13px;
   color: var(--dim); cursor: pointer; }
 #runBtn { flex: 1 1 auto; width: 100%; font-size: 15px; padding: 12px 20px;
@@ -121,13 +125,13 @@ button.ghost { background: transparent; }
 button.danger { color: var(--bad); border-color: var(--bad); background: transparent; }
 button:disabled { opacity: .45; cursor: not-allowed; }
 
-#cfgJsonBox { display: none; }   /* 隐藏 JSON 预览, 仅作为测试/导出的数据载体 */
-#saveCfg { width: 100%; }        /* 与提交按钮等宽 */
-
+#cfgJsonBox { display: none; }
+#saveCfg { width: 100%; }
+#refreshJobs  { width: 100%; } 
 /* ---------- 发射窗口表 (每行一个窗口, 不换行) ---------- */
 .era-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; flex-wrap: nowrap; }
 .era-row .era-sp { color: var(--dim); }
-.era-row input[type="date"] { width: 140px; background: #0c121f; color: var(--txt);
+.era-row input[type="date"] { width: 120px; background: #0c121f; color: var(--txt);
   border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font-size: 13px; }
 .era-del { border: 0; background: transparent; color: var(--bad); cursor: pointer;
            font-size: 13px; padding: 0 4px; }
@@ -143,10 +147,6 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .node-row select { width: 116px; background: #0c121f; color: var(--txt);
                    border: 1px solid var(--line); border-radius: 6px;
                    padding: 5px 8px; font-size: 13px; }  /* 与 .field select 风格统一 */
-.node-role { font-size: 11px; padding: 2px 8px; border-radius: 8px; flex-shrink: 0; }
-.node-role.depart { background: #1b3a66; color: #a8c8ff; }
-.node-role.flyby { background: #23466b; color: #cfe0ff; }
-.node-role.arrive { background: #1e4d33; color: #7fe8b0; }
 .node-settings { display: flex; align-items: center; gap: 6px; margin-left: auto; }
 .node-settings label { font-size: 11px; color: var(--dim); }
 .node-settings input { width: 56px; }
@@ -158,7 +158,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .node-del { border: 0; background: transparent; color: var(--bad); cursor: pointer;
             font-size: 15px; padding: 0 4px; }
 
-/* ---------- 日志 / 结果 双 tab ---------- */
+/* ---------- 日志 / 结果 ---------- */
 .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--line); margin-bottom: 10px; }
 .tab { border: 0; border-bottom: 2px solid transparent; background: transparent;
        color: var(--dim); font-size: 14px; padding: 8px 16px; cursor: pointer; border-radius: 0; }
@@ -169,14 +169,14 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .logbox pre { height: 300px; overflow: auto; background: #0c121f; border: 1px solid var(--line);
               border-radius: 6px; padding: 8px; font-size: 11.5px; white-space: pre-wrap; }
 
-/* ---------- 结果卡片: 行1 三卡 + 行2 左右双卡 ---------- */
+/* ---------- 结果卡片 ---------- */
 .cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
 .card { border: 1px solid var(--line); border-radius: 8px; padding: 8px; text-align: center; }
 .card .k { font-size: 11px; color: var(--dim); }
 .card .v { font-size: 14px; font-weight: 700; margin-top: 2px; }
 .card.ok { border-color: var(--ok); }
 .card.bad { border-color: var(--bad); }
-.card.wide { grid-column: span 1; }   /* 行2 左右各占半宽 */
+.card.wide { grid-column: span 1; } 
 .cards.rows2 { grid-template-columns: repeat(2, 1fr); }
 
 table { border-collapse: collapse; width: 100%; font-size: 12.5px; margin: 6px 0; table-layout: fixed; }
