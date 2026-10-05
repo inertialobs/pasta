@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import numpy as np
 import pytest
 
 from orbcalc.config import TrajConfig
@@ -30,7 +29,7 @@ def test_candidate_key_returns_key_and_info(selection, monkeypatch):
     cfg = TrajConfig()
     fake_info = {"tofs": [100.0, 200.0], "dsm_total": 150.0}
     monkeypatch.setattr(selection, "decode", lambda x, udp: fake_info)
-    key, info = selection.candidate_key(cfg, np.zeros(10), FakeUdp())
+    key, info = selection.candidate_key(cfg, [0.0] * 10, FakeUdp())
     assert info is fake_info
     assert key[0] == 0  # feasible
 
@@ -43,7 +42,7 @@ def test_candidate_key_returns_worst_on_decode_failure(selection, monkeypatch):
         raise RuntimeError("boom")
 
     monkeypatch.setattr(selection, "decode", _boom)
-    key, info = selection.candidate_key(cfg, np.zeros(10), FakeUdp())
+    key, info = selection.candidate_key(cfg, [0.0] * 10, FakeUdp())
     assert info is None
     assert key == (1, 1e18, 1e18)
 
@@ -59,7 +58,7 @@ def test_pick_best_skips_failed_candidates(stages, selection, monkeypatch):
         return good_info
 
     monkeypatch.setattr(selection, "decode", _decode)
-    candidates = [(np.array([0.0] * 10), FakeUdp()), (np.array([1.0] * 10), FakeUdp())]
+    candidates = [([0.0] * 10, FakeUdp()), ([1.0] * 10, FakeUdp())]
     best = stages.pick_best(cfg, candidates)
     assert best[0] is good_info
     assert best[1][0] == 1.0
@@ -73,6 +72,6 @@ def test_pick_best_raises_when_all_candidates_fail(stages, selection, monkeypatc
         raise RuntimeError("boom")
 
     monkeypatch.setattr(selection, "decode", _boom)
-    candidates = [(np.zeros(10), FakeUdp()), (np.ones(10), FakeUdp())]
+    candidates = [([0.0] * 10, FakeUdp()), ([1.0] * 10, FakeUdp())]
     with pytest.raises(RuntimeError, match="all candidates failed to decode"):
         stages.pick_best(cfg, candidates)
