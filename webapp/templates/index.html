@@ -47,17 +47,15 @@
     <details class="main-panel" open>
       <summary>任务序列配置</summary>
       <div class="preset-inline">
-        <label>任务预设</label>
+        <label>预设</label>
         <select id="presetSelect" class="wide"></select>
-        <button id="presetLoad" class="ghost">载入</button>
-        <button id="presetSave" class="ghost">存为任务预设</button>
+        <button id="presetLoad" class="ghost">加载</button>
+        <button id="presetSave" class="ghost">保存</button>
       </div>
-      <div id="trajPresetMsg" class="preset-msg"></div>
       <fieldset>
         <legend>行星序列 (节点编辑器)</legend>
         <div id="seqNodes" class="seq-nodes"></div>
-        <div class="actions"><button id="nodeAdd" class="ghost">+ 添加节点 (插到到达前)</button></div>
-        <p class="hint">出发 → 飞掠(×N) → 到达。可增删、上下移、切换行星；rp 上界统一由「飞掠 rp 全局上界」控制（pykep 标量约束），判定阈值与安全半径依赖所选行星。</p>
+        <div class="actions"><button id="nodeAdd" class="ghost">+ 添加节点</button></div>
       </fieldset>
       <fieldset>
         <legend>每腿 TOF 边界 (天)</legend>

@@ -22,13 +22,13 @@ function fmtTS(epochSec) {
 /* ---------- 行星注册表 (与 orbcalc/planets.py 一致) ---------- */
 const PLANETS = {
   MERCURY: { label: "Mercury 水星", note: "安全高度 200 km" },
-  VENUS:   { label: "Venus 金星",   note: "≥ 200 km 地表以上" },
-  EARTH:   { label: "Earth 地球",   note: "≥ 200 km 地表以上" },
-  MARS:    { label: "Mars 火星",    note: "≥ 200 km 地表以上" },
-  JUPITER: { label: "Jupiter 木星", note: "≥ 2×R_planet (71492 km)" },
-  SATURN:  { label: "Saturn 土星",  note: "≥ 2×R_planet (58232 km)" },
+  VENUS:   { label: "Venus 金星",   note: "≥ 200 km" },
+  EARTH:   { label: "Earth 地球",   note: "≥ 200 km" },
+  MARS:    { label: "Mars 火星",    note: "≥ 200 km" },
+  JUPITER: { label: "Jupiter 木星", note: "≥ 2R<br>71492 km" },
+  SATURN:  { label: "Saturn 土星",  note: "≥ 2R<br>58232 km" },
   URANUS:  { label: "Uranus 天王星", note: "到达节点 (无飞掠判定)" },
-  NEPTUNE: { label: "Neptune 海王星", note: "≥ 2×R_planet (24622 km)" },
+  NEPTUNE: { label: "Neptune 海王星", note: "≥ 2R<br>24622 km" },
 };
 
 /* ---------- 状态 ---------- */
@@ -84,10 +84,6 @@ function fillTrajForm(cfg) {
                  cfg.tof_bounds);
   buildEraTable(cfg.eras);
   updateConfigJson();
-  // 载入反馈
-  $("trajPresetMsg").textContent =
-    `已载入任务预设「${cfg.name || "?"}」: ` +
-    `${(cfg.seq || []).join("→")} · 目标 ${cfg.objective || "min_tof"}`;
 }
 
 function fillCompForm(cfg) {

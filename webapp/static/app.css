@@ -24,9 +24,9 @@ header .sub { color: var(--dim); font-size: 13px; line-height: 16px; margin-top:
 .hidden { display: none !important; }
 
 /* ---------- 三栏布局 ---------- */
-.layout { display: grid; grid-template-columns: 260px 470px 1fr; gap: 14px; padding: 14px; }
+.layout { display: grid; grid-template-columns: 260px 380px 1fr; gap: 14px; padding: 14px; }
 /* 折叠后留 28px 窄条 (只保留展开按钮), 防止按钮本身被挤出无法恢复 */
-.layout.side-collapsed { grid-template-columns: 28px 470px 1fr; }
+.layout.side-collapsed { grid-template-columns: 28px 380px 1fr; }
 .layout.side-collapsed .sidebar { padding: 10px 4px; }
 .layout.side-collapsed .sidebar-head h2,
 .layout.side-collapsed .job-list,
@@ -87,13 +87,12 @@ legend { font-size: 12px; color: var(--dim); }
 .hint { font-size: 11.5px; color: var(--dim); margin: 4px 0; }
 
 /* ---------- 预设行 (内嵌于两大子块) ---------- */
-.preset-inline { display: flex; align-items: center; gap: 8px; margin: 6px 0 10px; flex-wrap: wrap; }
-.preset-inline label { width: 70px; font-size: 12.5px; color: var(--dim); flex-shrink: 0; }
-.preset-inline select { flex: 1; min-width: 120px; background: #0c121f; color: var(--txt);
+.preset-inline { display: flex; align-items: center; gap: 8px; margin: 6px 0 10px; flex-wrap: nowrap; }
+.preset-inline label { width: auto; font-size: 12.5px; color: var(--dim); flex-shrink: 0; }
+.preset-inline select { flex: 1; min-width: 0; background: #0c121f; color: var(--txt);
                         border: 1px solid var(--line); border-radius: 6px;
                         padding: 5px 8px; font-size: 13px; }
-.preset-msg { font-size: 11px; color: var(--dim); margin: 2px 0 6px;
-              overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 
 /* ---------- 任务配置两大子块 (可折叠) ---------- */
 details.main-panel { border: 1px solid var(--line); border-radius: 10px; margin: 10px 0;
@@ -110,6 +109,7 @@ details.main-panel > *:not(summary) { padding: 10px 14px; }
 /* ---------- 操作按钮行 ---------- */
 .actions { display: flex; gap: 8px; margin: 10px 0; flex-wrap: wrap; align-items: center; }
 .actions.center { justify-content: stretch; }
+#nodeAdd, #eraAdd { width: 100%; }   /* 与上方节点/窗口控件等宽 */
 .inline-check { display: inline-flex; align-items: center; gap: 5px; font-size: 13px;
   color: var(--dim); cursor: pointer; }
 #runBtn { flex: 1 1 auto; width: 100%; font-size: 15px; padding: 12px 20px;
@@ -121,13 +121,13 @@ button.ghost { background: transparent; }
 button.danger { color: var(--bad); border-color: var(--bad); background: transparent; }
 button:disabled { opacity: .45; cursor: not-allowed; }
 
-#cfgJsonBox { width: 100%; background: #0c121f; color: var(--dim); border: 1px solid var(--line);
-              border-radius: 6px; font-family: Consolas, monospace; font-size: 11px; }
+#cfgJsonBox { display: none; }   /* 隐藏 JSON 预览, 仅作为测试/导出的数据载体 */
+#saveCfg { width: 100%; }        /* 与提交按钮等宽 */
 
 /* ---------- 发射窗口表 (每行一个窗口, 不换行) ---------- */
 .era-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; flex-wrap: nowrap; }
 .era-row .era-sp { color: var(--dim); }
-.era-row input[type="date"] { width: 150px; background: #0c121f; color: var(--txt);
+.era-row input[type="date"] { width: 140px; background: #0c121f; color: var(--txt);
   border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font-size: 13px; }
 .era-del { border: 0; background: transparent; color: var(--bad); cursor: pointer;
            font-size: 13px; padding: 0 4px; }
@@ -139,8 +139,8 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .node-row.depart { border-color: #3e6bbd; }
 .node-row.flyby { border-left: 3px solid var(--acc); }
 .node-row.arrive { border-left: 3px solid var(--ok); }
-.node-idx { width: 22px; text-align: center; color: var(--dim); font-size: 12px; flex-shrink: 0; }
-.node-row select { width: 132px; background: #0c121f; color: var(--txt);
+.node-idx { width: 20px; text-align: center; color: var(--dim); font-size: 12px; flex-shrink: 0; }
+.node-row select { width: 116px; background: #0c121f; color: var(--txt);
                    border: 1px solid var(--line); border-radius: 6px;
                    padding: 5px 8px; font-size: 13px; }  /* 与 .field select 风格统一 */
 .node-role { font-size: 11px; padding: 2px 8px; border-radius: 8px; flex-shrink: 0; }
