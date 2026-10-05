@@ -654,7 +654,7 @@ async function renderPlot(jid) {
   const traces = [];
   traces.push({ type: "scatter3d", mode: "markers",
     x: p.sun.x, y: p.sun.y, z: p.sun.z, name: "Sun",
-    marker: { size: 10, color: "#ffd75e" } });
+    marker: { size: 5, color: "#ffd75e" } });
   (p.bodies || []).forEach(b => {
     traces.push({ type: "scatter3d", mode: "lines", name: b.tag,
       x: b.orbit.x, y: b.orbit.y, z: b.orbit.z,
@@ -663,7 +663,7 @@ async function renderPlot(jid) {
       traces.push({ type: "scatter3d", mode: "markers+text", name: b.tag + " 交会",
         x: [en.x], y: [en.y], z: [en.z],
         text: [b.tag + "\n" + (en.iso || "").slice(0, 10)],
-        textfont: { size: 9 }, marker: { size: 7, color: b.color } });
+        textfont: { size: 9 }, marker: { size: 3.5, color: b.color } });
     });
   });
   (p.legs || []).forEach((leg, i) => {
@@ -686,7 +686,7 @@ async function renderPlot(jid) {
         name: `DSM${i + 1}`, x: [dsm.x], y: [dsm.y], z: [dsm.z],
         text: [fmt(dsm.dsm_ms, 0) + " m/s"], hovertext: [hover],
         hoverinfo: "text",
-        textfont: { size: 9 }, marker: { size: 5, color: "#b56cff", symbol: "diamond" } });
+        textfont: { size: 9 }, marker: { size: 2.5, color: "#b56cff", symbol: "diamond" } });
     }
     if (state.showDsmDir && Array.isArray(dsm.unit) && dsm.unit.length === 3) {
       traces.push(dsmArrowTrace([dsm.x, dsm.y, dsm.z], dsm.unit,
