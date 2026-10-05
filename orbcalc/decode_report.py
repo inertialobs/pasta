@@ -107,8 +107,7 @@ def report(info, cfg, title="ORBIT SOLUTION (orbcalc)"):
         out.append(f"  {nm:<8} @ {pk.epoch(e).to_datetime()}   TOF={info['tofs'][i]:>8.2f} d")
     out.append(f"Total TOF         : {total_d:.1f} d = {total_d / 365.25:.2f} yr")
     out.append("-" * 78)
-    out.append(f"|v∞|_launch       : {info['vinf_launch'] / 1000:.4f} km/s   C3 = "
-               f"{(info['vinf_launch'] / 1000) ** 2:.2f} km²/s²")
+    out.append(f"|v∞|_launch       : {info['vinf_launch'] / 1000:.4f} km/s")
     for i, d in enumerate(info["dsm"]):
         out.append(f"  DSM ΔV[{i}] ({names[i]}->{names[i+1]}) : {d / 1000:.4f} km/s  "
                    f"(eta={info['etas'][i]:.3f})")
@@ -174,7 +173,6 @@ def summarize(info, cfg):
         "dsm_ok": bool(info["dsm_total"] <= cfg.dsm_limit_ms),
         "dsm_limit_ms": cfg.dsm_limit_ms,
         "vinf_launch_kmps": round(info["vinf_launch"] / 1000.0, 4),
-        "c3": round((info["vinf_launch"] / 1000.0) ** 2, 3),
         "vinf_arrival_kmps": round(info["vinf_arr"] / 1000.0, 4),
         "launch_iso": str(pk.epoch(info["t0"]).to_datetime()),
         "arrival_iso": str(pk.epoch(info["epochs"][-1]).to_datetime()),

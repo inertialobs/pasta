@@ -577,15 +577,13 @@ async function renderResult(jid) {
     $("chart").innerHTML = "<p>无可行解，无轨迹图</p>";
     return;
   }
-  // 行1: 总飞行时间 (年+天合并) | 总 DSM | C3   (无独立 DSM 限制框)
+  // 行1: 总飞行时间 (年+天合并) | 总 DSM   (无独立 DSM 限制框; 出射 v∞ 已在下方给出)
   // 行2: 左 = 发射时间·出射v∞, 右 = 到达时间·入射v∞
   cards.innerHTML = `
     <div class="card ${r.dsm_ok ? "ok" : "bad"}"><div class="k">总飞行时间</div>
       <div class="v">${fmt(r.tof_yr, 2)} yr (${fmt(r.tof_d, 0)} d)</div></div>
     <div class="card ${r.dsm_ok ? "ok" : "bad"}"><div class="k">总 DSM</div>
       <div class="v">${fmt(r.dsm_total_ms, 0)} m/s</div></div>
-    <div class="card"><div class="k">C3</div>
-      <div class="v">${fmt(r.c3, 2)} km²/s²</div></div>
     <div class="card wide"><div class="k">发射</div>
       <div class="v">${r.launch_iso ? r.launch_iso.slice(0, 10) : "–"} · v∞ ${fmt(r.vinf_launch_kmps, 3)} km/s</div></div>
     <div class="card wide"><div class="k">到达</div>
