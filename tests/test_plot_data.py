@@ -86,7 +86,7 @@ def test_build_plot_json_contains_dsm_direction(monkeypatch):
         "epochs": [0.0, 200.0], "tofs": [200.0],
         "dsm": [_norm(delta)], "dsm_total": _norm(delta),
         "blegs": [(r0, v0), (r_dsm, v_post)], "bep": [0.0, 100.0],
-        "dsm_vecs": [delta], "dsm_rtn": [[1.0, 2.0, 3.0]],
+        "dsm_vecs": [delta], "dsm_rtn": [[1.0, 2.0, 3.0]], "etas": [0.42],
     }
     data = plot_data.build_plot_json(cfg, info)
     assert data["dsm_arrow_au"] == plot_data.DSM_ARROW_AU
@@ -94,6 +94,8 @@ def test_build_plot_json_contains_dsm_direction(monkeypatch):
     assert dsm["vec"] == pytest.approx(delta, abs=1e-6)
     assert dsm["rtn"] == [1.0, 2.0, 3.0]
     assert dsm["unit"] == pytest.approx([c / _norm(delta) for c in delta], abs=1e-9)
+    assert dsm["iso"] == str(pk.epoch(100.0).to_datetime())
+    assert dsm["eta"] == 0.42
 
     info["dsm_vecs"] = [[0.0, 0.0, 0.0]]
     assert plot_data.build_plot_json(cfg, info)["legs"][0]["dsm"]["unit"] is None
@@ -132,6 +134,9 @@ def test_summarize_includes_rtn():
         "dsm": [10.0], "dsm_total": 10.0,
         "vinf_launch": 3000.0, "vinf_arr": 1000.0,
         "etas": [0.5], "dsm_rtn": [[1.0, 2.0, 3.0]],
+        "bep": [0.0, 50.0],
     }
     out = summarize(info, cfg)
     assert out["legs"][0]["dsm_rtn_ms"] == [1.0, 2.0, 3.0]
+    import pykep as pk
+    assert out["legs"][0]["dsm_iso"] == str(pk.epoch(50.0).to_datetime())

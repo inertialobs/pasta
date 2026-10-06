@@ -112,6 +112,7 @@ def build_plot_json(cfg, info):
     blegs, bep = info["blegs"], info["bep"]
     vecs_all = info.get("dsm_vecs") or []
     rtn_all = info.get("dsm_rtn") or []
+    etas_all = info.get("etas") or []
     for i in range(len(epochs) - 1):
         r0, v0 = blegs[2 * i]
         t_a, t_b = bep[2 * i], bep[2 * i + 1]
@@ -124,6 +125,8 @@ def build_plot_json(cfg, info):
                "z": float(r_dsm[2] / pk.AU),
                "iso": str(pk.epoch(t_b).to_datetime()),
                "dsm_ms": round(info["dsm"][i], 2)}
+        if i < len(etas_all):
+            dsm["eta"] = round(float(etas_all[i]), 4)
         if i < len(vecs_all):
             dsm["vec"] = [float(c) for c in vecs_all[i]]
             dsm["unit"] = _unit(vecs_all[i])

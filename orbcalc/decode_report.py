@@ -141,6 +141,7 @@ def summarize(info, cfg):
     total_d = sum(info["tofs"])
     legs = []
     rtn_all = info.get("dsm_rtn") or []
+    bep = info.get("bep") or []
     for i in range(len(info["tofs"])):
         leg = {
             "from": names[i], "to": names[i + 1],
@@ -148,6 +149,8 @@ def summarize(info, cfg):
             "dsm_ms": round(info["dsm"][i], 2),
             "eta": round(info["etas"][i], 4),
         }
+        if 2 * i + 1 < len(bep):
+            leg["dsm_iso"] = str(pk.epoch(bep[2 * i + 1]).to_datetime())
         if i < len(rtn_all):
             leg["dsm_rtn_ms"] = [round(float(c), 2) for c in rtn_all[i]]
         legs.append(leg)

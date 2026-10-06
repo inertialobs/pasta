@@ -582,16 +582,17 @@ async function renderResult(jid) {
     <div class="card ${r.dsm_ok ? "ok" : "bad"}"><div class="k">总 DSM</div>
       <div class="v">${fmt(r.dsm_total_ms, 0)} m/s</div></div>
     <div class="card wide"><div class="k">发射</div>
-      <div class="v">${r.launch_iso ? r.launch_iso.slice(0, 10) : "–"} · v∞ ${fmt(r.vinf_launch_kmps, 3)} km/s</div></div>
+      <div class="v">${r.launch_iso ? r.launch_iso.slice(0, 10) : "–"}<br>v∞ ${fmt(r.vinf_launch_kmps, 3)} km/s</div></div>
     <div class="card wide"><div class="k">到达</div>
-      <div class="v">${r.arrival_iso ? r.arrival_iso.slice(0, 10) : "–"} · v∞ ${fmt(r.vinf_arrival_kmps, 3)} km/s</div></div>`;
+      <div class="v">${r.arrival_iso ? r.arrival_iso.slice(0, 10) : "–"}<br>v∞ ${fmt(r.vinf_arrival_kmps, 3)} km/s</div></div>`;
 
   const legs = r.legs || [];
   $("legTable").innerHTML = "<h3>转移信息</h3>" + tableHtml(
-    ["从", "到", "TOF (d)", "DSM (m/s)", "eta", "R (m/s)", "T (m/s)", "N (m/s)"],
+    ["从", "到", "TOF (d)", "DSM 时间", "DSM (m/s)", "R (m/s)", "T (m/s)", "N (m/s)"],
     legs.map(l => {
       const rtn = l.dsm_rtn_ms || [];
-      return [l.from, l.to, fmt(l.tof_d, 1), fmt(l.dsm_ms, 0), fmt(l.eta, 3),
+      const dsmTime = l.dsm_iso ? l.dsm_iso.slice(0, 16) : "–";
+      return [l.from, l.to, fmt(l.tof_d, 1), dsmTime, fmt(l.dsm_ms, 0),
         rtn.length === 3 ? fmt(rtn[0], 1) : "–",
         rtn.length === 3 ? fmt(rtn[1], 1) : "–",
         rtn.length === 3 ? fmt(rtn[2], 1) : "–"];
@@ -680,7 +681,11 @@ async function renderPlot(jid) {
       line: { color: "#f78fbe", width: 3, dash: "dot" } });
     const dsm = leg.dsm || {};
     if (dsm.x != null) {
-      let hover = `DSM${i + 1}<br>总 ${fmt(dsm.dsm_ms, 1)} m/s`;
+      const when = dsm.iso ? dsm.iso.slice(0, 16) : "";
+      // 时间/位置放一组, 速度放一组
+      let hover = `DSM${i + 1}${when ? "<br>" + when : ""}`;
+      if (dsm.eta != null) hover += `<br>eta ${fmt(dsm.eta, 3)}`;
+      hover += `<br>总 ${fmt(dsm.dsm_ms, 1)} m/s`;
       const rtn = dsm.rtn;
       if (Array.isArray(rtn) && rtn.length === 3) {
         hover += `<br>R ${fmt(rtn[0], 1)} · T ${fmt(rtn[1], 1)} · N ${fmt(rtn[2], 1)} m/s`;
