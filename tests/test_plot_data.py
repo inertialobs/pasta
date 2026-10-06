@@ -158,5 +158,7 @@ def test_summarize_flyby_arrival_time_and_dsm_elapsed():
     out = summarize(info, cfg)
     import pykep as pk
     assert out["flybys"][0]["arrive_iso"] == str(pk.epoch(100.0).to_datetime())
+    assert out["flybys"][0]["arrive_elapsed_d"] == 100.0
+    assert out["arrival_elapsed_d"] == 300.0
     assert out["legs"][0]["dsm_elapsed_d"] == 50.0
     assert out["legs"][1]["dsm_elapsed_d"] == 280.0

@@ -164,6 +164,7 @@ def summarize(info, cfg):
         epochs = info.get("epochs") or []
         if i + 1 < len(epochs):
             item["arrive_iso"] = str(pk.epoch(epochs[i + 1]).to_datetime())
+            item["arrive_elapsed_d"] = round(epochs[i + 1] - info["t0"], 3)
         if safe is not None:
             from .planets import get_planet
             R = get_planet(tag).radius
@@ -183,6 +184,7 @@ def summarize(info, cfg):
         "vinf_arrival_kmps": round(info["vinf_arr"] / 1000.0, 4),
         "launch_iso": str(pk.epoch(info["t0"]).to_datetime()),
         "arrival_iso": str(pk.epoch(info["epochs"][-1]).to_datetime()),
+        "arrival_elapsed_d": round(info["epochs"][-1] - info["t0"], 3),
         "epochs_iso": [str(pk.epoch(e).to_datetime()) for e in info["epochs"]],
         "legs": legs,
         "flybys": flybys,

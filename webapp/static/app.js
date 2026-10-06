@@ -4,6 +4,17 @@
 /* ---------- 工具 ---------- */
 const $ = (id) => document.getElementById(id);
 const fmt = (v, d = 2) => (v == null ? "–" : Number(v).toFixed(d));
+// 天数 -> "xxx d HH:MM:SS"
+function fmtElapsed(days) {
+  if (days == null || !isFinite(days)) return "–";
+  const sign = days < 0 ? "-" : "";
+  let total = Math.round(Math.abs(days) * 86400);
+  const d = Math.floor(total / 86400);
+  total -= d * 86400;
+  const p = (n) => String(n).padStart(2, "0");
+  const hh = Math.floor(total / 3600), mm = Math.floor((total % 3600) / 60), ss = total % 60;
+  return `${sign}${d} d ${p(hh)}:${p(mm)}:${p(ss)}`;
+}
 async function jfetch(url, opts) {
   const r = await fetch(url, opts);
   if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
@@ -35,6 +46,7 @@ const PLANETS = {
 const state = {
   jobs: [], activeJobId: null, pollTimer: null, plotlyReady: false,
   seq: [], pendingTofBounds: null, busy: false, showDsmDir: true,
+  timeMode: "elapsed", dsmMode: "total", arriveMode: "elapsed", lastResult: null,
 };
 
 /* ============================================================
@@ -417,10 +429,37 @@ $("saveCfg").addEventListener("click", () => {
 });
 
 /* ============================================================
- * 左侧边栏折叠
+ * 折叠 (任务侧栏 / 任务配置) + 结果表列切换
  * ============================================================ */
-$("sidebarToggle").addEventListener("click", () => {
-  document.querySelector(".layout").classList.toggle("side-collapsed");
+const layoutEl = document.querySelector(".layout");
+const LS = window.localStorage;
+
+function _bindCollapse(btnId, cls, key) {
+  if (LS.getItem(key) === "1") layoutEl.classList.add(cls);
+  $(btnId).addEventListener("click", () => {
+    const on = layoutEl.classList.toggle(cls);
+    LS.setItem(key, on ? "1" : "0");
+    if (typeof Plotly !== "undefined" && $("chart"))
+      setTimeout(() => Plotly.Plots.resize($("chart")), 60);
+  });
+}
+_bindCollapse("sidebarToggle", "side-collapsed", "pasta.sideCollapsed");
+_bindCollapse("configToggle", "config-collapsed", "pasta.configCollapsed");
+
+// 恢复保存的列切换模式 (控件在表格首行内动态生成)
+const LS_KEY = { timeMode: "pasta.timeMode", dsmMode: "pasta.dsmMode", arriveMode: "pasta.arriveMode" };
+Object.entries(LS_KEY).forEach(([k, store]) => {
+  const v = LS.getItem(store);
+  if (v) state[k] = v;
+});
+// 事件委托: 表格每次重绘都会重建控件, 不能直接绑到按钮
+$("paneResult").addEventListener("click", e => {
+  const b = e.target.closest(".seg button[data-v]");
+  if (!b) return;
+  const key = b.closest(".seg").dataset.k;
+  state[key] = b.dataset.v;
+  if (LS_KEY[key]) LS.setItem(LS_KEY[key], state[key]);
+  renderTables();
 });
 
 /* ============================================================
@@ -570,6 +609,7 @@ async function renderResult(jid) {
       <div class="v">${escapeHtml(r.status)}</div></div>
       <div class="card wide"><div class="k">说明</div>
       <div class="v">${escapeHtml(r.error || "无可行解，未生成轨迹")}</div></div>`;
+    state.lastResult = null;
     $("legTable").innerHTML = ""; $("flybyTable").innerHTML = "";
     $("chart").innerHTML = "<p>无可行解，无轨迹图</p>";
     return;
@@ -586,44 +626,81 @@ async function renderResult(jid) {
     <div class="card wide"><div class="k">到达</div>
       <div class="v">${r.arrival_iso ? r.arrival_iso.slice(0, 10) : "–"}<br>v∞ ${fmt(r.vinf_arrival_kmps, 4)} km/s</div></div>`;
 
-  const legs = r.legs || [];
-  $("legTable").innerHTML = "<h3>转移信息</h3>" + tableHtml(
-    ["从", "到", "T+ (d)", "DSM 时间", "DSM (m/s)", "R (m/s)", "T (m/s)", "N (m/s)"],
-    legs.map(l => {
-      const rtn = l.dsm_rtn_ms || [];
-      const dsmTime = l.dsm_iso ? l.dsm_iso.slice(0, 19) : "–";
-      const elapsed = l.dsm_elapsed_d != null ? fmt(l.dsm_elapsed_d, 3) : "–";
-      return [l.from, l.to, elapsed, dsmTime, fmt(l.dsm_ms, 2),
-        rtn.length === 3 ? fmt(rtn[0], 2) : "–",
-        rtn.length === 3 ? fmt(rtn[1], 2) : "–",
-        rtn.length === 3 ? fmt(rtn[2], 2) : "–"];
-    }));
+  state.lastResult = r;
+  renderTables();
+  renderPlot(jid);
+}
 
-  // 飞掠信息: 天体 / 到达时间 / rp / 低点高度 (无判定列; 颜色保留 ok/bad 语义)
-  // 末行附最终到达天体 (无 rp/高度)
+/* 结果表按当前切换模式重绘 (时间: T+/Datetime; DSM: Total/Vector) */
+function renderTables() {
+  const r = state.lastResult;
+  if (!r || (r.status && r.status !== "ok")) return;
+  const timeMode = state.timeMode;   // elapsed | datetime
+  const dsmMode = state.dsmMode;     // total | vector
+
+  // ---- 转移信息 ----
+  const legs = r.legs || [];
+  const legHeads = [
+    "从", "到",
+    `<span class="tool-label">DSM</span>` +
+      segHtml("timeMode", [["elapsed", "T+"], ["datetime", "Datetime"]]),
+    `<span class="tool-label">Delta-v</span>` +
+      segHtml("dsmMode", [["total", "Total"], ["vector", "Vector"]]),
+  ];
+  const legRows = legs.map(l => {
+    const out = [l.from, l.to];
+    out.push(timeMode === "elapsed"
+      ? fmtElapsed(l.dsm_elapsed_d)
+      : (l.dsm_iso ? l.dsm_iso.slice(0, 19) : "–"));
+    if (dsmMode === "total") {
+      out.push(fmt(l.dsm_ms, 2));
+    } else {
+      const rtn = l.dsm_rtn_ms || [];
+      out.push(rtn.length === 3
+        ? `R ${fmt(rtn[0], 2)} · T ${fmt(rtn[1], 2)} · N ${fmt(rtn[2], 2)}`
+        : "–");
+    }
+    return out;
+  });
+  $("legTable").innerHTML = "<h3>转移信息</h3>" + tableHtml(legHeads, legRows);
+
+  // ---- 飞掠信息 (末行附最终到达天体; 时间列有独立开关) ----
+  const arriveMode = state.arriveMode;
   const fly = r.flybys || [];
+  const flyHeads = [
+    "天体",
+    `<span class="tool-label">到达时间</span>` +
+      segHtml("arriveMode", [["elapsed", "T+"], ["datetime", "Datetime"]]),
+    "rp (R)", "低点高度 (km)",
+  ];
+  const flyWhen = (iso, elapsed) => arriveMode === "elapsed"
+    ? fmtElapsed(elapsed)
+    : (iso ? iso.slice(0, 19) : "–");
   const flyRows = fly.map(f => {
     const cls = f.alt_ok ? "ok" : "bad";
-    const arrive = f.arrive_iso ? f.arrive_iso.slice(0, 19) : "–";
     return [`<span class="${cls}">${escapeHtml(f.name)}</span>`,
-      arrive,
-      fmt(f.rp_R, 5),
-      f.alt_km != null ? fmt(f.alt_km, 1) : "–"];
+      flyWhen(f.arrive_iso, f.arrive_elapsed_d),
+      fmt(f.rp_R, 5), f.alt_km != null ? fmt(f.alt_km, 1) : "–"];
   });
   const seq = r.sequence || [];
   if (seq.length) {
     flyRows.push([`<span class="ok">${escapeHtml(seq[seq.length - 1])}</span>`,
-      (r.arrival_iso || "").slice(0, 19) || "–", "–", "–"]);
+      flyWhen(r.arrival_iso, r.arrival_elapsed_d), "–", "–"]);
   }
   $("flybyTable").innerHTML = "<h3>飞掠信息</h3>" + (flyRows.length ? tableHtml(
-    ["天体", "到达时间", "rp (R)", "低点高度 (km)"], flyRows) : "<p>无飞掠数据</p>");
-
-  renderPlot(jid);
+    flyHeads, flyRows) : "<p>无飞掠数据</p>");
 }
 
 function tableHtml(heads, rows) {
   return `<table><tr>${heads.map(h => `<th>${h}</th>`).join("")}</tr>` +
     rows.map(row => `<tr>${row.map(c => `<td>${c}</td>`).join("")}</tr>`).join("") + "</table>";
+}
+
+/* 分段切换控件 (放在表格首行; 用 data-k 标识切换项) */
+function segHtml(key, opts) {
+  return `<span class="seg" data-k="${key}">` + opts.map(([v, label]) =>
+    `<button data-v="${v}"${state[key] === v ? ' class="active"' : ""}>${label}</button>`
+  ).join("") + `</span>`;
 }
 
 function dsmArrowTrace(tail, unit, L, name) {

@@ -26,6 +26,39 @@ def assert_roles_and_leg_labels(page, seq):
     assert labels == [f"{seq[i]} → {seq[i + 1]}" for i in range(len(seq) - 1)]
 
 
+def test_layout_collapse_and_result_view_toggles(editor_page):
+    page = editor_page
+    layout = page.locator(".layout")
+
+    # 任务配置面板可折叠
+    page.locator("#configToggle").click()
+    assert layout.evaluate("el => el.classList.contains('config-collapsed')")
+    page.locator("#configToggle").click()
+    assert not layout.evaluate("el => el.classList.contains('config-collapsed')")
+
+    # 结果表首行的切换控件 (T+/Datetime, Total/Vector) — 注入假结果后渲染
+    page.locator("#tabResult").click()
+    page.evaluate("""() => {
+      state.lastResult = {status: "ok", sequence: ["Earth", "Venus"],
+        legs: [{from: "Earth", to: "Venus", dsm_elapsed_d: 10.0,
+                dsm_iso: "2020-01-01 00:00:00", dsm_ms: 100.0,
+                dsm_rtn_ms: [1.0, 2.0, 3.0]}],
+        flybys: []};
+      renderTables();
+    }""")
+    page.locator(".seg[data-k='timeMode'] button[data-v='datetime']").click()
+    assert page.locator(".seg[data-k='timeMode'] button[data-v='datetime']").evaluate(
+        "b => b.classList.contains('active')")
+    # Datetime 模式下第一条腿的时间单元格显示日期时间
+    assert "2020-01-01" in page.locator("#legTable table tr").nth(1).inner_text()
+    # 飞掠表的到达时间开关独立, 不随转移表 timeMode 联动 (仍为 T+)
+    assert page.locator(".seg[data-k='arriveMode'] button[data-v='elapsed']").evaluate(
+        "b => b.classList.contains('active')")
+    page.locator(".seg[data-k='dsmMode'] button[data-v='vector']").click()
+    assert page.locator(".seg[data-k='dsmMode'] button[data-v='vector']").evaluate(
+        "b => b.classList.contains('active')")
+
+
 def test_add_and_delete_eras_preserves_order_and_minimum_one(editor_page):
     page = editor_page
     assert page.locator("#cfgName").input_value() == ""

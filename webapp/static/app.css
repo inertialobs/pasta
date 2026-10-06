@@ -24,8 +24,12 @@ header .sub { color: var(--dim); font-size: 13px; line-height: 16px; margin-top:
 .hidden { display: none !important; }
 
 /* ---------- 三栏布局 ---------- */
-.layout { display: grid; grid-template-columns: 260px 355px 1fr; gap: 14px; padding: 14px; }
-.layout.side-collapsed { grid-template-columns: 28px 355px 1fr; }
+/* 第三列用 minmax(0,1fr), 允许右栏被压缩到视口内 (1fr 默认 min-width:auto 会被表格撑宽) */
+.layout { display: grid; grid-template-columns: 260px 355px minmax(0, 1fr); gap: 14px; padding: 14px; }
+.layout.side-collapsed { grid-template-columns: 28px 355px minmax(0, 1fr); }
+.layout.config-collapsed { grid-template-columns: 260px 32px minmax(0, 1fr); }
+.layout.side-collapsed.config-collapsed { grid-template-columns: 28px 32px minmax(0, 1fr); }
+.panel, .sidebar { min-width: 0; }
 .layout.side-collapsed .sidebar { padding: 10px 4px; }
 .layout.side-collapsed .sidebar-head h2,
 .layout.side-collapsed .job-list,
@@ -65,6 +69,16 @@ header .sub { color: var(--dim); font-size: 13px; line-height: 16px; margin-top:
 /* ---------- 面板 / 字段通用 ---------- */
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
 .panel h2 { margin: 0 0 10px; font-size: 15px; color: var(--acc); }
+.panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.panel-head h2 { margin: 0; }
+#configToggle { border: 0; background: transparent; color: var(--dim); cursor: pointer;
+                font-size: 16px; padding: 2px 8px; }
+/* 折叠态: 只保留薄条与展开按钮 */
+.layout.config-collapsed .config { padding: 10px 2px; }
+.layout.config-collapsed .config > :not(.panel-head) { display: none; }
+.layout.config-collapsed .config .panel-head { margin: 0; justify-content: center; }
+.layout.config-collapsed .config .panel-head h2 { display: none; }
+.layout.config-collapsed #configToggle { transform: rotate(180deg); }
 .field { display: flex; align-items: center; gap: 6px; margin: 6px 0; flex-wrap: wrap;}
 .field.wide label { width: auto; }
 .field label { width: 88px; font-size: 13px; color: var(--dim); flex-shrink: 0; }
@@ -186,6 +200,16 @@ td.ok { background: rgba(62, 207, 122, .12); color: #8fe8b8; }
 td.bad { background: rgba(255, 107, 107, .12); color: #ffb3b3; }
 td input { width: 58px; background: #0c121f; color: var(--txt);
            border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; font-size: 12.5px; }
+
+/* ---------- 表头内的列切换控件 ---------- */
+.tool-label { font-size: 12px; color: var(--dim); margin-right: 6px; }
+th .seg { vertical-align: middle; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; background: transparent; color: var(--dim); padding: 4px 10px;
+              font-size: 12px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button.active { background: #22304d; color: var(--txt); font-weight: 600; }
+#legTable, #flybyTable { overflow-x: auto; }
 
 #chart { margin-top: 10px; }
 
