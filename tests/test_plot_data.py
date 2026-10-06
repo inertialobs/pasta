@@ -140,3 +140,23 @@ def test_summarize_includes_rtn():
     assert out["legs"][0]["dsm_rtn_ms"] == [1.0, 2.0, 3.0]
     import pykep as pk
     assert out["legs"][0]["dsm_iso"] == str(pk.epoch(50.0).to_datetime())
+    assert out["legs"][0]["dsm_elapsed_d"] == 50.0
+
+
+def test_summarize_flyby_arrival_time_and_dsm_elapsed():
+    from orbcalc.decode_report import summarize
+
+    cfg = SimpleNamespace(name="t", seq=["EARTH", "VENUS", "MARS"],
+                          dsm_limit_ms=600.0, safe_radius={})
+    info = {
+        "t0": 0.0, "tofs": [100.0, 200.0], "epochs": [0.0, 100.0, 300.0],
+        "dsm": [10.0, 20.0], "dsm_total": 30.0,
+        "vinf_launch": 3000.0, "vinf_arr": 1000.0,
+        "etas": [0.5, 0.4], "rps": [1.5], "betas": [0.1],
+        "bep": [0.0, 50.0, 180.0, 280.0],
+    }
+    out = summarize(info, cfg)
+    import pykep as pk
+    assert out["flybys"][0]["arrive_iso"] == str(pk.epoch(100.0).to_datetime())
+    assert out["legs"][0]["dsm_elapsed_d"] == 50.0
+    assert out["legs"][1]["dsm_elapsed_d"] == 280.0

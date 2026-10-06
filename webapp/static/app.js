@@ -588,26 +588,35 @@ async function renderResult(jid) {
 
   const legs = r.legs || [];
   $("legTable").innerHTML = "<h3>转移信息</h3>" + tableHtml(
-    ["从", "到", "TOF (d)", "DSM 时间", "DSM (m/s)", "R (m/s)", "T (m/s)", "N (m/s)"],
+    ["从", "到", "自发射 (d)", "DSM 时间", "DSM (m/s)", "R (m/s)", "T (m/s)", "N (m/s)"],
     legs.map(l => {
       const rtn = l.dsm_rtn_ms || [];
       const dsmTime = l.dsm_iso ? l.dsm_iso.slice(0, 16) : "–";
-      return [l.from, l.to, fmt(l.tof_d, 1), dsmTime, fmt(l.dsm_ms, 0),
+      const elapsed = l.dsm_elapsed_d != null ? fmt(l.dsm_elapsed_d, 1) : "–";
+      return [l.from, l.to, elapsed, dsmTime, fmt(l.dsm_ms, 0),
         rtn.length === 3 ? fmt(rtn[0], 1) : "–",
         rtn.length === 3 ? fmt(rtn[1], 1) : "–",
         rtn.length === 3 ? fmt(rtn[2], 1) : "–"];
     }));
 
-  // 飞掠信息: 天体 / rp / 低点高度 (无判定列; 颜色保留 ok/bad 语义)
+  // 飞掠信息: 天体 / 到达时间 / rp / 低点高度 (无判定列; 颜色保留 ok/bad 语义)
+  // 末行附最终到达天体 (无 rp/高度)
   const fly = r.flybys || [];
-  $("flybyTable").innerHTML = "<h3>飞掠信息</h3>" + (fly.length ? tableHtml(
-    ["天体", "rp (R)", "低点高度 (km)"],
-    fly.map(f => {
-      const cls = f.alt_ok ? "ok" : "bad";
-      return [`<span class="${cls}">${escapeHtml(f.name)}</span>`,
-        fmt(f.rp_R, 3),
-        f.alt_km != null ? fmt(f.alt_km, 0) : "–"];
-    })) : "<p>无飞掠数据</p>");
+  const flyRows = fly.map(f => {
+    const cls = f.alt_ok ? "ok" : "bad";
+    const arrive = f.arrive_iso ? f.arrive_iso.slice(0, 16) : "–";
+    return [`<span class="${cls}">${escapeHtml(f.name)}</span>`,
+      arrive,
+      fmt(f.rp_R, 3),
+      f.alt_km != null ? fmt(f.alt_km, 0) : "–"];
+  });
+  const seq = r.sequence || [];
+  if (seq.length) {
+    flyRows.push([`<span class="ok">${escapeHtml(seq[seq.length - 1])}</span>`,
+      (r.arrival_iso || "").slice(0, 16) || "–", "–", "–"]);
+  }
+  $("flybyTable").innerHTML = "<h3>飞掠信息</h3>" + (flyRows.length ? tableHtml(
+    ["天体", "到达时间", "rp (R)", "低点高度 (km)"], flyRows) : "<p>无飞掠数据</p>");
 
   renderPlot(jid);
 }
