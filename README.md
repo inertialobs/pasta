@@ -29,7 +29,7 @@ Three ways to get PASTA:
 Grab the binary file from the [release page](https://github.com/inertialobs/pasta/releases) and it works out of the box.
 
 ### 2. Source via pip
-Requires Windows + Python 3.13 / 3.14. Notice that `pykep`/`pygmo` have no official Windows wheels on PyPI, so install them from the prebuilt wheel repository first:
+Requires Python 3.13 / 3.14. Notice that `pykep`/`pygmo` have no official Windows wheels on PyPI, so install them from the prebuilt wheel repository for 3.14 first:
 - Download the matching `pykep` and `pygmo` `.whl` from [inertialobs/pykep-pygmo-win-wheels/releases](https://github.com/inertialobs/pykep-pygmo-win-wheels/releases)
 - Then:
   ```bash
@@ -38,7 +38,7 @@ Requires Windows + Python 3.13 / 3.14. Notice that `pykep`/`pygmo` have no offic
   pip install -r requirements.txt
   python main.py        # default http://127.0.0.1:8765
   ```
-
+> Notice that for Linux users, official pykep wheels may missing some files, and you can copy `pykep/trajopt/gym/tops/` to  `site-packages/pykep/trajopt/gym/` and download `de440s.bsp` into `site-packages/pykep/data/`
 ### 3. Source via conda
 Install `pykep`/`pygmo` through conda following the [official pykep docs](https://esa.github.io/pykep/), then install the remaining runtime deps and run from the project dir:
 ```bash
@@ -82,14 +82,13 @@ Browser (Flask web UI)
 - **Artifacts**（per-job dir `runs/<job>/`）：`config.json`、`log.txt`、`result.json`、`plot.json`、`best_x.npy`、`trajectory.png`.
 - **Config-driven**：`orbcalc/config.py` `TrajConfig` carries every task parameter (defaults kept aligned with the reference implementation).
 - **Global settings** `pasta.settings.json`：`host` / `port` / `open_browser` + global compute config；CLI flags override the file.
-<!-- 
+ 
 ## Built-in Presets
 
 | Task Preset | Description |
 |---|---|
-| EVVEJU (default) | E→V→V→E→J→Uranus，era 2029-2033 + 2017-2021 |
-| EVVEJS Cassini (1997-10) | E→V→V→E→J→Saturn (the real Cassini sequence), era 1997, TOF from actual legs |
--->
+| EVVEJS Cassini (1997-10) | E→V→V→E→J→Saturn (the real Cassini sequence) |
+
 ## Layout
 
 ```

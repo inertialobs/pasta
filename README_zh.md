@@ -28,7 +28,7 @@
 从 [release 页面](https://github.com/inertialobs/pasta/releases)下载开箱即用的二进制包
 
 ### 2. pip（源码运行）
-需要 Windows + Python 3.13 / 3.14。注意：PyPI 上没有 pykep / pygmo 的官方 Windows wheel，需先从预编译 wheel 仓库安装：
+需要 Python 3.13 / 3.14。注意：PyPI 上没有 pykep / pygmo 的官方 Windows wheel，需先从 Python 3.14 的预编译 wheel 仓库下载安装：
 - 从 [inertialobs/pykep-pygmo-win-wheels/releases](https://github.com/inertialobs/pykep-pygmo-win-wheels/releases) 下载对应 `pykep` 和 `pygmo` 的 `.whl`
 - 然后：
   ```bash
@@ -37,7 +37,7 @@
   pip install -r requirements.txt
   python main.py        # 默认 http://127.0.0.1:8765
   ```
-
+> 注意对于Linux用户, 官方的 pykep wheel 可能会缺失一些文件, 对此你可以复制pykep仓库中的 `pykep/trajopt/gym/tops/` 到 `site-packages/pykep/trajopt/gym/` 并下载 `de440s.bsp` 到 `site-packages/pykep/data/`
 ### 3. conda（源码运行）
 按 [pykep 官方文档](https://esa.github.io/pykep/) 通过 conda 安装 `pykep` / `pygmo`，再安装其余运行依赖并到项目目录运行：
 ```bash
@@ -81,14 +81,13 @@ pyinstaller build.spec       # 产物 dist\pasta\pasta.exe
 - **产物**（每任务目录 `runs/<job>/`）：`config.json`、`log.txt`、`result.json`、`plot.json`、`best_x.npy`、`trajectory.png`。
 - **配置驱动**：`orbcalc/config.py` 的 `TrajConfig` 承载全部任务参数（默认值与参考实现逐项对齐）。
 - **全局配置** `pasta.settings.json`：`host` / `port` / `open_browser` + 全局计算配置；命令行参数优先于文件。
-<!-- 
-## 🔧 内置预设
+
+## 内置预设
 
 | 任务预设 | 说明 |
 |---|---|
-| EVVEJU（默认） | E→V→V→E→J→Uranus，era 2029-2033 + 2017-2021 |
-| EVVEJS 卡西尼号（1997-10） | E→V→V→E→J→Saturn卡西尼号真实序列，era 1997，TOF 按实测行程 |
--->
+| EVVEJS 卡西尼号（1997-10） | E→V→V→E→J→Saturn卡西尼号真实序列 |
+
 ## 目录结构
 
 ```
