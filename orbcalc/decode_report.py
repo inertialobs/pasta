@@ -151,7 +151,7 @@ def summarize(info, cfg):
         }
         if 2 * i + 1 < len(bep):
             leg["dsm_iso"] = str(pk.epoch(bep[2 * i + 1]).to_datetime())
-            leg["dsm_elapsed_d"] = round(bep[2 * i + 1] - info["t0"], 1)
+            leg["dsm_elapsed_d"] = round(bep[2 * i + 1] - info["t0"], 3)
         if i < len(rtn_all):
             leg["dsm_rtn_ms"] = [round(float(c), 2) for c in rtn_all[i]]
         legs.append(leg)
@@ -160,7 +160,7 @@ def summarize(info, cfg):
         tag = cfg.seq[i + 1]
         safe = planet_safe_radius(tag, cfg)
         rp = info["rps"][i]
-        item = {"name": nm, "tag": tag, "rp_R": round(rp, 4), "beta": round(info["betas"][i], 4)}
+        item = {"name": nm, "tag": tag, "rp_R": round(rp, 5), "beta": round(info["betas"][i], 4)}
         epochs = info.get("epochs") or []
         if i + 1 < len(epochs):
             item["arrive_iso"] = str(pk.epoch(epochs[i + 1]).to_datetime())

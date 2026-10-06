@@ -578,25 +578,25 @@ async function renderResult(jid) {
   // 行2: 左 = 发射时间·出射v∞, 右 = 到达时间·入射v∞
   cards.innerHTML = `
     <div class="card ${r.dsm_ok ? "ok" : "bad"}"><div class="k">总飞行时间</div>
-      <div class="v">${fmt(r.tof_yr, 2)} yr (${fmt(r.tof_d, 0)} d)</div></div>
+      <div class="v">${fmt(r.tof_yr, 3)} yr (${fmt(r.tof_d, 1)} d)</div></div>
     <div class="card ${r.dsm_ok ? "ok" : "bad"}"><div class="k">总 DSM</div>
-      <div class="v">${fmt(r.dsm_total_ms, 0)} m/s</div></div>
+      <div class="v">${fmt(r.dsm_total_ms, 1)} m/s</div></div>
     <div class="card wide"><div class="k">发射</div>
-      <div class="v">${r.launch_iso ? r.launch_iso.slice(0, 10) : "–"}<br>v∞ ${fmt(r.vinf_launch_kmps, 3)} km/s</div></div>
+      <div class="v">${r.launch_iso ? r.launch_iso.slice(0, 10) : "–"}<br>v∞ ${fmt(r.vinf_launch_kmps, 4)} km/s</div></div>
     <div class="card wide"><div class="k">到达</div>
-      <div class="v">${r.arrival_iso ? r.arrival_iso.slice(0, 10) : "–"}<br>v∞ ${fmt(r.vinf_arrival_kmps, 3)} km/s</div></div>`;
+      <div class="v">${r.arrival_iso ? r.arrival_iso.slice(0, 10) : "–"}<br>v∞ ${fmt(r.vinf_arrival_kmps, 4)} km/s</div></div>`;
 
   const legs = r.legs || [];
   $("legTable").innerHTML = "<h3>转移信息</h3>" + tableHtml(
-    ["从", "到", "自发射 (d)", "DSM 时间", "DSM (m/s)", "R (m/s)", "T (m/s)", "N (m/s)"],
+    ["从", "到", "T+ (d)", "DSM 时间", "DSM (m/s)", "R (m/s)", "T (m/s)", "N (m/s)"],
     legs.map(l => {
       const rtn = l.dsm_rtn_ms || [];
-      const dsmTime = l.dsm_iso ? l.dsm_iso.slice(0, 16) : "–";
-      const elapsed = l.dsm_elapsed_d != null ? fmt(l.dsm_elapsed_d, 1) : "–";
-      return [l.from, l.to, elapsed, dsmTime, fmt(l.dsm_ms, 0),
-        rtn.length === 3 ? fmt(rtn[0], 1) : "–",
-        rtn.length === 3 ? fmt(rtn[1], 1) : "–",
-        rtn.length === 3 ? fmt(rtn[2], 1) : "–"];
+      const dsmTime = l.dsm_iso ? l.dsm_iso.slice(0, 19) : "–";
+      const elapsed = l.dsm_elapsed_d != null ? fmt(l.dsm_elapsed_d, 3) : "–";
+      return [l.from, l.to, elapsed, dsmTime, fmt(l.dsm_ms, 2),
+        rtn.length === 3 ? fmt(rtn[0], 2) : "–",
+        rtn.length === 3 ? fmt(rtn[1], 2) : "–",
+        rtn.length === 3 ? fmt(rtn[2], 2) : "–"];
     }));
 
   // 飞掠信息: 天体 / 到达时间 / rp / 低点高度 (无判定列; 颜色保留 ok/bad 语义)
@@ -604,16 +604,16 @@ async function renderResult(jid) {
   const fly = r.flybys || [];
   const flyRows = fly.map(f => {
     const cls = f.alt_ok ? "ok" : "bad";
-    const arrive = f.arrive_iso ? f.arrive_iso.slice(0, 16) : "–";
+    const arrive = f.arrive_iso ? f.arrive_iso.slice(0, 19) : "–";
     return [`<span class="${cls}">${escapeHtml(f.name)}</span>`,
       arrive,
-      fmt(f.rp_R, 3),
-      f.alt_km != null ? fmt(f.alt_km, 0) : "–"];
+      fmt(f.rp_R, 5),
+      f.alt_km != null ? fmt(f.alt_km, 1) : "–"];
   });
   const seq = r.sequence || [];
   if (seq.length) {
     flyRows.push([`<span class="ok">${escapeHtml(seq[seq.length - 1])}</span>`,
-      (r.arrival_iso || "").slice(0, 16) || "–", "–", "–"]);
+      (r.arrival_iso || "").slice(0, 19) || "–", "–", "–"]);
   }
   $("flybyTable").innerHTML = "<h3>飞掠信息</h3>" + (flyRows.length ? tableHtml(
     ["天体", "到达时间", "rp (R)", "低点高度 (km)"], flyRows) : "<p>无飞掠数据</p>");
@@ -690,14 +690,14 @@ async function renderPlot(jid) {
       line: { color: "#f78fbe", width: 3, dash: "dot" } });
     const dsm = leg.dsm || {};
     if (dsm.x != null) {
-      const when = dsm.iso ? dsm.iso.slice(0, 16) : "";
+      const when = dsm.iso ? dsm.iso.slice(0, 19) : "";
       // 时间/位置放一组, 速度放一组
       let hover = `DSM${i + 1}${when ? "<br>" + when : ""}`;
-      if (dsm.eta != null) hover += `<br>eta ${fmt(dsm.eta, 3)}`;
-      hover += `<br>总 ${fmt(dsm.dsm_ms, 1)} m/s`;
+      if (dsm.eta != null) hover += `<br>eta ${fmt(dsm.eta, 4)}`;
+      hover += `<br>总 ${fmt(dsm.dsm_ms, 2)} m/s`;
       const rtn = dsm.rtn;
       if (Array.isArray(rtn) && rtn.length === 3) {
-        hover += `<br>R ${fmt(rtn[0], 1)} · T ${fmt(rtn[1], 1)} · N ${fmt(rtn[2], 1)} m/s`;
+        hover += `<br>R ${fmt(rtn[0], 2)} · T ${fmt(rtn[1], 2)} · N ${fmt(rtn[2], 2)} m/s`;
       }
       traces.push({ type: "scatter3d", mode: "markers+text",
         name: `DSM${i + 1}`, x: [dsm.x], y: [dsm.y], z: [dsm.z],
