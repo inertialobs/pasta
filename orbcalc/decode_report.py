@@ -31,8 +31,28 @@ def _rtn_components(r, v, vec):
     return [float(np.dot(vec, r_hat)), float(np.dot(vec, t_hat)), float(np.dot(vec, n_hat))]
 
 
+def _rpn_components(r, v, vec):
+    """冲量在速度系 (KSP-radial / Prograde / Normal) 的分量 [m/s], 顺序 R,P,N.
+
+    R = N×P (轨道面内垂直速度, KSP 机动节点 radial); P = v̂ (沿速度); N = 轨道法向 (r×v)。
+    基 (P, R, N) 为右手系 (P×R=N); 此处按 R,P,N 输出以与 RTN 排列一致。
+    """
+    r = np.asarray(r, dtype=float)
+    v = np.asarray(v, dtype=float)
+    vec = np.asarray(vec, dtype=float)
+    vn = float(np.linalg.norm(v))
+    h = np.cross(r, v)
+    hn = float(np.linalg.norm(h))
+    if vn < 1e-12 or hn < 1e-12:
+        return [0.0, 0.0, 0.0]
+    p_hat = v / vn
+    n_hat = h / hn
+    r_hat = np.cross(n_hat, p_hat)
+    return [float(np.dot(vec, r_hat)), float(np.dot(vec, p_hat)), float(np.dot(vec, n_hat))]
+
+
 def dsm_vectors(blegs, bep, n, mu=None):
-    """重建每腿 DSM 冲量向量 (m/s, 日心惯性系) 及其 R/T/N 分量.
+    """重建每腿 DSM 冲量向量 (m/s, 日心惯性系) 及其 R/T/N、P/R/N 分量.
 
     pykep 的 _compute_dvs 只返回 DSM ΔV 的模长; 这里用弹道腿起点按同一 mu
     传播到 DSM 历元恢复冲量前速度, 再取 (冲量后速度 - 冲量前速度)。
@@ -40,7 +60,7 @@ def dsm_vectors(blegs, bep, n, mu=None):
     """
     if mu is None:
         mu = pk.MU_SUN
-    vecs, rtns = [], []
+    vecs, rtns, rpns = [], [], []
     for i in range(n):
         r0, v0 = blegs[2 * i]
         t_a, t_b = bep[2 * i], bep[2 * i + 1]
@@ -56,7 +76,8 @@ def dsm_vectors(blegs, bep, n, mu=None):
         vec = [float(v_post[k] - v_pre[k]) for k in range(3)]
         vecs.append(vec)
         rtns.append(_rtn_components(list(r_dsm), list(v_pre), vec))
-    return vecs, rtns
+        rpns.append(_rpn_components(list(r_dsm), list(v_pre), vec))
+    return vecs, rtns, rpns
 
 
 def decode(x, udp):
@@ -72,14 +93,14 @@ def decode(x, udp):
     rps = [float(x[7 + 4 * (i - 1)]) for i in range(1, n)]
     betas = [float(x[6 + 4 * (i - 1)]) for i in range(1, n)]
     etas = [float(x[4 + 4 * i]) for i in range(n)]
-    vecs, rtns = dsm_vectors(blegs, bep, n)
+    vecs, rtns, rpns = dsm_vectors(blegs, bep, n)
     return dict(
         x=x, t0=t0, tofs=tofs, epochs=epochs, dsm=dsm,
         dsm_total=sum(dsm), vinf_launch=float(x[3]),
         vinf_arr=float(DV[-1]) if len(DV) > n else 0.0,
         rps=rps, betas=betas, etas=etas, T=T,
         blegs=blegs, bep=bep, lamberts=lamberts,
-        dsm_vecs=vecs, dsm_rtn=rtns,
+        dsm_vecs=vecs, dsm_rtn=rtns, dsm_rpn=rpns,
     )
 
 
@@ -141,6 +162,7 @@ def summarize(info, cfg):
     total_d = sum(info["tofs"])
     legs = []
     rtn_all = info.get("dsm_rtn") or []
+    rpn_all = info.get("dsm_rpn") or []
     bep = info.get("bep") or []
     for i in range(len(info["tofs"])):
         leg = {
@@ -154,6 +176,8 @@ def summarize(info, cfg):
             leg["dsm_elapsed_d"] = round(bep[2 * i + 1] - info["t0"], 3)
         if i < len(rtn_all):
             leg["dsm_rtn_ms"] = [round(float(c), 2) for c in rtn_all[i]]
+        if i < len(rpn_all):
+            leg["dsm_rpn_ms"] = [round(float(c), 2) for c in rpn_all[i]]
         legs.append(leg)
     flybys = []
     for i, nm in enumerate(names[1:-1]):

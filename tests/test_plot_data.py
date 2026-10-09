@@ -41,7 +41,7 @@ def test_dsm_vectors_recover_impulse_vector():
     delta = [100.0, -50.0, 20.0]
     v_post = [v_pre[k] + delta[k] for k in range(3)]
 
-    vecs, rtns = dsm_vectors([(r0, v0), (r_dsm, v_post)], [0.0, dt_days], 1)
+    vecs, rtns, rpns = dsm_vectors([(r0, v0), (r_dsm, v_post)], [0.0, dt_days], 1)
     assert vecs[0] == pytest.approx(delta, abs=1e-6)
     assert _norm(vecs[0]) == pytest.approx(_norm(delta), abs=1e-6)
 
@@ -62,6 +62,19 @@ def test_dsm_vectors_recover_impulse_vector():
     dR, dT, dN = rtns[0]
     rebuilt = [dR * r_hat[k] + dT * t_hat[k] + dN * n_hat[k] for k in range(3)]
     assert rebuilt == pytest.approx(vecs[0], abs=1e-6)
+
+    # R/P/N (KSP 速度系, 顺序 R,P,N) 也应无失真重建, 且 P 分量沿速度
+    vn = math.sqrt(sum(c * c for c in v_pre))
+    p_hat = [c / vn for c in v_pre]
+    r_hat_rpn = [
+        n_hat[1] * p_hat[2] - n_hat[2] * p_hat[1],
+        n_hat[2] * p_hat[0] - n_hat[0] * p_hat[2],
+        n_hat[0] * p_hat[1] - n_hat[1] * p_hat[0],
+    ]
+    dRr, dP, dNr = rpns[0]
+    rebuilt_p = [dRr * r_hat_rpn[k] + dP * p_hat[k] + dNr * n_hat[k] for k in range(3)]
+    assert rebuilt_p == pytest.approx(vecs[0], abs=1e-6)
+    assert dP == pytest.approx(sum(delta[k] * p_hat[k] for k in range(3)), abs=1e-6)
 
 
 def test_build_plot_json_contains_dsm_direction(monkeypatch):
@@ -86,13 +99,15 @@ def test_build_plot_json_contains_dsm_direction(monkeypatch):
         "epochs": [0.0, 200.0], "tofs": [200.0],
         "dsm": [_norm(delta)], "dsm_total": _norm(delta),
         "blegs": [(r0, v0), (r_dsm, v_post)], "bep": [0.0, 100.0],
-        "dsm_vecs": [delta], "dsm_rtn": [[1.0, 2.0, 3.0]], "etas": [0.42],
+        "dsm_vecs": [delta], "dsm_rtn": [[1.0, 2.0, 3.0]], "dsm_rpn": [[4.0, 5.0, 6.0]],
+        "etas": [0.42],
     }
     data = plot_data.build_plot_json(cfg, info)
     assert data["dsm_arrow_au"] == plot_data.DSM_ARROW_AU
     dsm = data["legs"][0]["dsm"]
     assert dsm["vec"] == pytest.approx(delta, abs=1e-6)
     assert dsm["rtn"] == [1.0, 2.0, 3.0]
+    assert dsm["rpn"] == [4.0, 5.0, 6.0]
     assert dsm["unit"] == pytest.approx([c / _norm(delta) for c in delta], abs=1e-9)
     assert dsm["iso"] == str(pk.epoch(100.0).to_datetime())
     assert dsm["eta"] == 0.42
@@ -133,11 +148,12 @@ def test_summarize_includes_rtn():
         "t0": 0.0, "tofs": [100.0], "epochs": [0.0, 100.0],
         "dsm": [10.0], "dsm_total": 10.0,
         "vinf_launch": 3000.0, "vinf_arr": 1000.0,
-        "etas": [0.5], "dsm_rtn": [[1.0, 2.0, 3.0]],
+        "etas": [0.5], "dsm_rtn": [[1.0, 2.0, 3.0]], "dsm_rpn": [[4.0, 5.0, 6.0]],
         "bep": [0.0, 50.0],
     }
     out = summarize(info, cfg)
     assert out["legs"][0]["dsm_rtn_ms"] == [1.0, 2.0, 3.0]
+    assert out["legs"][0]["dsm_rpn_ms"] == [4.0, 5.0, 6.0]
     import pykep as pk
     assert out["legs"][0]["dsm_iso"] == str(pk.epoch(50.0).to_datetime())
     assert out["legs"][0]["dsm_elapsed_d"] == 50.0

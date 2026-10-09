@@ -36,13 +36,13 @@ def test_layout_collapse_and_result_view_toggles(editor_page):
     page.locator("#configToggle").click()
     assert not layout.evaluate("el => el.classList.contains('config-collapsed')")
 
-    # 结果表首行的切换控件 (T+/Datetime, Total/Vector) — 注入假结果后渲染
+    # 结果表首行的切换控件 (T+/Datetime, Total/RTN/RPN) — 注入假结果后渲染
     page.locator("#tabResult").click()
     page.evaluate("""() => {
       state.lastResult = {status: "ok", sequence: ["Earth", "Venus"],
         legs: [{from: "Earth", to: "Venus", dsm_elapsed_d: 10.0,
                 dsm_iso: "2020-01-01 00:00:00", dsm_ms: 100.0,
-                dsm_rtn_ms: [1.0, 2.0, 3.0]}],
+                dsm_rtn_ms: [1.0, 2.0, 3.0], dsm_rpn_ms: [4.0, 5.0, 6.0]}],
         flybys: []};
       renderTables();
     }""")
@@ -54,9 +54,11 @@ def test_layout_collapse_and_result_view_toggles(editor_page):
     # 飞掠表的到达时间开关独立, 不随转移表 timeMode 联动 (仍为 T+)
     assert page.locator(".seg[data-k='arriveMode'] button[data-v='elapsed']").evaluate(
         "b => b.classList.contains('active')")
-    page.locator(".seg[data-k='dsmMode'] button[data-v='vector']").click()
-    assert page.locator(".seg[data-k='dsmMode'] button[data-v='vector']").evaluate(
+    page.locator(".seg[data-k='dsmMode'] button[data-v='rpn']").click()
+    assert page.locator(".seg[data-k='dsmMode'] button[data-v='rpn']").evaluate(
         "b => b.classList.contains('active')")
+    # RPN 模式下第一条腿的 DSM 单元格显示 R/P/N
+    assert "R 4.00" in page.locator("#legTable table tr").nth(1).inner_text()
 
 
 def test_add_and_delete_eras_preserves_order_and_minimum_one(editor_page):

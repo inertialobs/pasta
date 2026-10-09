@@ -645,7 +645,7 @@ function renderTables() {
     `<span class="tool-label">DSM</span>` +
       segHtml("timeMode", [["elapsed", "T+"], ["datetime", "Datetime"]]),
     `<span class="tool-label">Delta-v</span>` +
-      segHtml("dsmMode", [["total", "Total"], ["vector", "Vector"]]),
+      segHtml("dsmMode", [["total", "Total"], ["rtn", "RTN"], ["rpn", "RPN"]]),
   ];
   const legRows = legs.map(l => {
     const out = [l.from, l.to];
@@ -654,6 +654,11 @@ function renderTables() {
       : (l.dsm_iso ? l.dsm_iso.slice(0, 19) : "–"));
     if (dsmMode === "total") {
       out.push(fmt(l.dsm_ms, 2));
+    } else if (dsmMode === "rpn") {
+      const rpn = l.dsm_rpn_ms || [];
+      out.push(rpn.length === 3
+        ? `R ${fmt(rpn[0], 2)} · P ${fmt(rpn[1], 2)} · N ${fmt(rpn[2], 2)}`
+        : "–");
     } else {
       const rtn = l.dsm_rtn_ms || [];
       out.push(rtn.length === 3
@@ -775,6 +780,10 @@ async function renderPlot(jid) {
       const rtn = dsm.rtn;
       if (Array.isArray(rtn) && rtn.length === 3) {
         hover += `<br>R ${fmt(rtn[0], 2)} · T ${fmt(rtn[1], 2)} · N ${fmt(rtn[2], 2)} m/s`;
+      }
+      const rpn = dsm.rpn;
+      if (Array.isArray(rpn) && rpn.length === 3) {
+        hover += `<br>R ${fmt(rpn[0], 2)} · P ${fmt(rpn[1], 2)} · N ${fmt(rpn[2], 2)} m/s`;
       }
       traces.push({ type: "scatter3d", mode: "markers+text",
         name: `DSM${i + 1}`, x: [dsm.x], y: [dsm.y], z: [dsm.z],

@@ -112,6 +112,7 @@ def build_plot_json(cfg, info):
     blegs, bep = info["blegs"], info["bep"]
     vecs_all = info.get("dsm_vecs") or []
     rtn_all = info.get("dsm_rtn") or []
+    rpn_all = info.get("dsm_rpn") or []
     etas_all = info.get("etas") or []
     for i in range(len(epochs) - 1):
         r0, v0 = blegs[2 * i]
@@ -132,6 +133,8 @@ def build_plot_json(cfg, info):
             dsm["unit"] = _unit(vecs_all[i])
         if i < len(rtn_all):
             dsm["rtn"] = [float(c) for c in rtn_all[i]]
+        if i < len(rpn_all):
+            dsm["rpn"] = [float(c) for c in rpn_all[i]]
         legs.append({
             "from": cfg.seq[i], "to": cfg.seq[i + 1],
             "ballistic": bal, "lambert": lam,
