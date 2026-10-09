@@ -45,7 +45,7 @@ const PLANETS = {
 /* ---------- 状态 ---------- */
 const state = {
   jobs: [], activeJobId: null, pollTimer: null, plotlyReady: false,
-  seq: [], pendingTofBounds: null, busy: false, showDsmDir: true,
+  seq: [], pendingTofBounds: null, pendingLambert: null, busy: false, showDsmDir: true,
   timeMode: "elapsed", dsmMode: "total", arriveMode: "elapsed", lastResult: null,
 };
 
@@ -93,7 +93,7 @@ function fillTrajForm(cfg) {
   $("cfgEtaH").value = (cfg.eta_bounds || [0.01, 0.9])[1];
   $("cfgRpUb").value = cfg.rp_ub;
   buildSeqEditor(cfg.seq || ["EARTH", "VENUS", "VENUS", "EARTH", "JUPITER", "URANUS"],
-                 cfg.tof_bounds);
+                 cfg.tof_bounds, cfg.lambert_types);
   buildEraTable(cfg.eras);
   updateConfigJson();
 }
@@ -113,32 +113,59 @@ function fillCompForm(cfg) {
 }
 
 /* ---------- 序列节点编辑器 ---------- */
-function buildSeqEditor(seq, tofBounds) {
+/* 转移类型: 每腿 TOF 表"类型"列的按钮; 点击循环 1/2 -> 3 -> 4。
+ * 取值即 cfg.lambert_types 的元素 (= pykep Lambert 解索引, 见 orbcalc/mga.py)。 */
+const LAMBERT_TYPES = [
+  { tag: "1/2", title: "单圈转移 (类型 1/2, 解 #0)" },
+  { tag: "3",   title: "一圈低能转移 (类型 3, 解 #1)" },
+  { tag: "4",   title: "一圈高能转移 (类型 4, 解 #2)" },
+];
+
+function setLegLambert(btn, lam) {
+  const k = Number.isInteger(lam) && lam >= 0 && lam < LAMBERT_TYPES.length ? lam : 0;
+  const t = LAMBERT_TYPES[k];
+  btn.dataset.lam = String(k);
+  btn.textContent = t.tag;
+  btn.title = `${t.title}, 点击切换`;
+}
+
+function makeNodeRow(tag) {
+  const row = document.createElement("div");
+  row.className = "node-row flyby";
+  row.innerHTML = `
+    <select data-k="tag">${planetOptions(tag)}</select>
+    <span class="node-settings" data-k="settings">
+      <span class="node-safe">${PLANETS[tag] ? PLANETS[tag].note : ""}</span>
+    </span>
+    <span class="node-moves">
+      <button class="node-move up" title="上移">↑</button>
+      <button class="node-move dn" title="下移">↓</button>
+    </span>
+    <button class="node-del" title="删除节点">✕</button>`;
+  return row;
+}
+
+function buildSeqEditor(seq, tofBounds, lambertTypes) {
   state.seq = [...seq];
   state.pendingTofBounds = Array.isArray(tofBounds) ? tofBounds : null;
+  state.pendingLambert = Array.isArray(lambertTypes) ? lambertTypes.slice() : null;
   const wrap = $("seqNodes");
   wrap.innerHTML = "";
-  seq.forEach((tag, i) => {
-    const role = i === 0 ? "depart"
-      : (i === seq.length - 1 ? "arrive" : "flyby");
-    const row = document.createElement("div");
-    row.className = "node-row " + role;
-    row.dataset.i = i;
-    row.innerHTML = `
-      <span class="node-idx">${i + 1}</span>
-      <select data-k="tag">${planetOptions(tag)}</select>
-      <span class="node-settings" data-k="settings">
-        <span class="node-safe">${PLANETS[tag] ? PLANETS[tag].note : ""}</span>
-      </span>
-      <span class="node-moves">
-        <button class="node-move up" title="上移">↑</button>
-        <button class="node-move dn" title="下移">↓</button>
-      </span>
-      <button class="node-del" title="删除节点">✕</button>`;
+  seq.forEach((tag) => {
+    const row = makeNodeRow(tag);
     if (seq.length <= 2) row.querySelector(".node-del").style.visibility = "hidden";
     wrap.appendChild(row);
   });
   refreshSeqRoles();
+}
+
+/* 每腿转移类型 (按 TOF 表逐行读取, data-leg 即腿序) */
+function readLegLambert() {
+  const arr = [];
+  document.querySelectorAll("#tofTable .leg-lam").forEach(b => {
+    arr[+b.dataset.leg] = Number(b.dataset.lam) || 0;
+  });
+  return arr;
 }
 
 function planetOptions(sel) {
@@ -154,8 +181,6 @@ function refreshSeqRoles() {
     const role = i === 0 ? "depart" : (i === rows.length - 1 ? "arrive" : "flyby");
     row.className = "node-row " + role;
     row.dataset.i = i;
-    const idxSpan = row.querySelector(".node-idx");
-    if (idxSpan) idxSpan.textContent = i + 1;
     const current = row.querySelector(".node-settings");
     current.innerHTML = "";
     const tag = row.querySelector('select[data-k="tag"]').value;
@@ -191,7 +216,7 @@ function buildTofTable(nLegs) {
   const tb = $("tofTable");
   tb.innerHTML = "";
   const tbl = document.createElement("table");
-  tbl.innerHTML = "<tr><th>腿</th><th>区间</th><th>最小 (d)</th><th>最大 (d)</th></tr>";
+  tbl.innerHTML = "<tr><th>区间</th><th>类型</th><th>最小 (d)</th><th>最大 (d)</th></tr>";
   let lastCfg = {};
   try { lastCfg = JSON.parse($("cfgJsonBox").value || "{}") || {}; } catch (e) { lastCfg = {}; }
   // 优先级: 预设载入带来的 tof_bounds > 上次表单值 (节点增删时保留编辑) > 默认值
@@ -210,15 +235,30 @@ function buildTofTable(nLegs) {
   }
   while (arr.length < nLegs) arr.push(fallback(arr.length));
   state.pendingTofBounds = null;   // 只消费一次, 后续节点增删走 lastCfg 回退
+
+  // 每腿转移类型: 同样按索引保留 (预设 > 上次表单值 > 默认 0)
+  const pLam = state.pendingLambert;
+  let lamArr;
+  if (Array.isArray(pLam) && pLam.length === nLegs) {
+    lamArr = pLam.slice();
+  } else if (Array.isArray(lastCfg.lambert_types)) {
+    lamArr = lastCfg.lambert_types.slice(0, nLegs);
+  } else {
+    lamArr = [];
+  }
+  while (lamArr.length < nLegs) lamArr.push(0);
+  state.pendingLambert = null;
+
   const seq = state.seq;
   for (let i = 0; i < nLegs; i++) {
     const [lo, hi] = arr[i] || [60, 5000];
     const from = seq[i], to = seq[i + 1];
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${i + 1}</td>
-      <td>${from} → ${to}</td>
+    tr.innerHTML = `<td>${from} → ${to}</td>
+      <td><button class="leg-lam" type="button" data-leg="${i}"></button></td>
       <td><input data-leg="${i}" data-k="lo" type="number" value="${lo}" min="1"></td>
       <td><input data-leg="${i}" data-k="hi" type="number" value="${hi}" min="1"></td>`;
+    setLegLambert(tr.querySelector(".leg-lam"), lamArr[i]);
     tbl.appendChild(tr);
   }
   tb.appendChild(tbl);
@@ -264,6 +304,7 @@ function collectConfig() {
     seq,
     safe_radius: {},
     tof_bounds: tofB,
+    lambert_types: readLegLambert(),
     vinf_bounds_kmps: [+$("cfgVinfL").value, +$("cfgVinfH").value],
     eta_bounds: [+$("cfgEtaL").value, +$("cfgEtaH").value],
     rp_ub: +$("cfgRpUb").value,
@@ -291,19 +332,7 @@ function collectConfig() {
 $("nodeAdd").addEventListener("click", () => {
   const rows = [...document.querySelectorAll("#seqNodes .node-row")];
   if (rows.length >= 10) { alert("序列最多 10 个节点"); return; }
-  const row = document.createElement("div");
-  row.className = "node-row flyby";
-  row.innerHTML = `
-    <span class="node-idx">${rows.length}</span>
-    <select data-k="tag">${planetOptions("VENUS")}</select>
-    <span class="node-settings">
-      <span class="node-safe">${PLANETS.VENUS.note}</span>
-    </span>
-    <span class="node-moves">
-      <button class="node-move up" title="上移">↑</button>
-      <button class="node-move dn" title="下移">↓</button>
-    </span>
-    <button class="node-del" title="删除节点">✕</button>`;
+  const row = makeNodeRow("VENUS");
   $("seqNodes").appendChild(row);   // 行为变更: 追加到末尾 (新节点成为到达)
   refreshSeqRoles();
   updateConfigJson();
@@ -332,6 +361,12 @@ $("seqNodes").addEventListener("change", (e) => {
   updateConfigJson();
 });
 $("seqNodes").addEventListener("input", () => updateConfigJson());
+$("tofTable").addEventListener("click", (e) => {
+  const lb = e.target.closest(".leg-lam");
+  if (!lb) return;
+  setLegLambert(lb, (Number(lb.dataset.lam) + 1) % LAMBERT_TYPES.length);
+  updateConfigJson();
+});
 $("eraTable").addEventListener("click", (e) => {
   const btn = e.target.closest(".era-del");
   if (!btn || btn.disabled) return;

@@ -13,17 +13,15 @@ def read_config(page):
 def assert_roles_and_leg_labels(page, seq):
     nodes = page.locator("#seqNodes .node-row")
     assert nodes.count() == len(seq)
-    assert [nodes.nth(i).locator(".node-idx").inner_text() for i in range(len(seq))] == [
-        str(i + 1) for i in range(len(seq))
-    ]
     classes = [nodes.nth(i).get_attribute("class") for i in range(len(seq))]
     expected_roles = ["depart"] + ["flyby"] * (len(seq) - 2) + ["arrive"]
     assert classes == [f"node-row {r}" for r in expected_roles]
 
     rows = page.locator("#tofTable table tr")
     assert rows.count() == len(seq)  # header + one row per adjacent-node leg
-    labels = [rows.nth(i + 1).locator("td").nth(1).inner_text().strip() for i in range(len(seq) - 1)]
+    labels = [rows.nth(i + 1).locator("td").nth(0).inner_text().strip() for i in range(len(seq) - 1)]
     assert labels == [f"{seq[i]} → {seq[i + 1]}" for i in range(len(seq) - 1)]
+    assert page.locator("#tofTable .leg-lam").count() == len(seq) - 1
 
 
 def test_layout_collapse_and_result_view_toggles(editor_page):
@@ -147,3 +145,56 @@ def test_departure_and_arrival_nodes_can_move(editor_page):
     expected[last - 1], expected[last] = expected[last], expected[last - 1]
     assert read_config(page)["seq"] == expected
     assert_roles_and_leg_labels(page, expected)
+
+
+def leg_lam(page, leg):
+    return page.locator(f'#tofTable .leg-lam[data-leg="{leg}"]')
+
+
+def test_transfer_type_button_is_in_tof_table_and_cycles(editor_page):
+    page = editor_page
+    n_legs = len(read_config(page)["seq"]) - 1
+    assert read_config(page)["lambert_types"] == [0] * n_legs
+    # 表头无 "腿" 列, 类型列紧跟区间列
+    headers = [th.inner_text().strip() for th in page.locator("#tofTable tr").first.locator("th").all()]
+    assert headers == ["区间", "类型", "最小 (d)", "最大 (d)"]
+    assert page.locator("#tofTable .leg-lam").count() == n_legs
+
+    btn = leg_lam(page, 0)
+    expect(btn).to_have_text("1/2")
+    btn.click()
+    expect(btn).to_have_text("3")
+    assert read_config(page)["lambert_types"][0] == 1
+    btn.click()
+    expect(btn).to_have_text("4")
+    assert read_config(page)["lambert_types"][0] == 2
+    btn.click()
+    expect(btn).to_have_text("1/2")
+    assert read_config(page)["lambert_types"] == [0] * n_legs
+
+
+def test_transfer_types_are_per_leg_index_preserved_on_node_changes(editor_page):
+    page = editor_page
+    n_legs = len(read_config(page)["seq"]) - 1
+
+    leg_lam(page, 1).click()                       # 第 2 腿 -> 3
+    assert read_config(page)["lambert_types"][1] == 1
+
+    page.locator("#nodeAdd").click()               # 追加节点: 新增末腿默认 0, 已有保留
+    assert read_config(page)["lambert_types"] == [0, 1] + [0] * (n_legs - 1)
+
+    page.locator("#seqNodes .node-row").last.locator(".node-del").click()   # 删回
+    assert read_config(page)["lambert_types"] == [0, 1] + [0] * (n_legs - 2)
+
+
+def test_loading_a_config_restores_mixed_transfer_types(editor_page):
+    page = editor_page
+    page.evaluate("""() => fillTrajForm({
+      name: "", seq: ["EARTH", "VENUS", "EARTH"],
+      tof_bounds: [[300, 800], [300, 800]], lambert_types: [1, 2],
+      eras: [["2029-01-01", "2030-06-30"]], objective: "min_dsm",
+      objective_weights: [1, 0], penalty: [10, 0.2], frontier_penalty: [30, 2],
+      dsm_limit_ms: 600, vinf_bounds_kmps: [3.5, 6], eta_bounds: [0.01, 0.9], rp_ub: 200 })""")
+    expect(leg_lam(page, 0)).to_have_text("3")
+    expect(leg_lam(page, 1)).to_have_text("4")
+    assert read_config(page)["lambert_types"] == [1, 2]
