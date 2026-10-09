@@ -166,19 +166,19 @@ function refreshSeqRoles() {
     del.style.visibility = rows.length <= 2 ? "hidden" : "visible";
     const up = row.querySelector(".node-move.up");
     const dn = row.querySelector(".node-move.dn");
-    if (up) up.style.visibility = (role === "flyby" && i > 1) ? "visible" : "hidden";
-    if (dn) dn.style.visibility = (role === "flyby" && i < rows.length - 2) ? "visible" : "hidden";
+    // 任意节点均可上/下移, 仅受首尾边界限制
+    if (up) up.style.visibility = i > 0 ? "visible" : "hidden";
+    if (dn) dn.style.visibility = i < rows.length - 1 ? "visible" : "hidden";
   });
   buildTofTable(rows.length - 1);
 }
 
-/* 交换飞掠节点位置 (dir: -1 上移, +1 下移) */
+/* 交换相邻节点位置 (dir: -1 上移, +1 下移); 出发点/到达点也可移动 */
 function moveNode(i, dir) {
   const wrap = $("seqNodes");
   const rows = [...wrap.children];
-  if (i < 1 || i > rows.length - 2) return;
   const j = i + dir;
-  if (j < 1 || j > rows.length - 2) return;
+  if (j < 0 || j >= rows.length) return;
   const a = rows[i], b = rows[j];
   if (dir < 0) wrap.insertBefore(a, b);
   else wrap.insertBefore(b, a);

@@ -129,3 +129,21 @@ def test_add_move_and_delete_body_keeps_sequence_and_tof_legs_aligned(editor_pag
     assert final["seq"] == original_seq
     assert final["tof_bounds"] == original_bounds
     assert_roles_and_leg_labels(page, original_seq)
+
+
+def test_departure_and_arrival_nodes_can_move(editor_page):
+    page = editor_page
+    seq = read_config(page)["seq"]
+
+    # 出发点可下移 (与第二个节点交换)
+    page.locator("#seqNodes .node-row").nth(0).locator(".node-move.dn").click()
+    expected = [seq[1], seq[0]] + seq[2:]
+    assert read_config(page)["seq"] == expected
+    assert_roles_and_leg_labels(page, expected)
+
+    # 到达点可上移
+    last = len(expected) - 1
+    page.locator("#seqNodes .node-row").nth(last).locator(".node-move.up").click()
+    expected[last - 1], expected[last] = expected[last], expected[last - 1]
+    assert read_config(page)["seq"] == expected
+    assert_roles_and_leg_labels(page, expected)
