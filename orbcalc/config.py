@@ -16,7 +16,7 @@ import json
 import re
 from pathlib import Path
 
-from . import TRAJ_DEFAULTS, TRAJ_PRESET_KEYS
+from . import LAMBERT_INDICES, TRAJ_DEFAULTS, TRAJ_PRESET_KEYS
 from .eras import EraSet
 from .util import is_num
 
@@ -43,6 +43,14 @@ class TrajConfig(dict):
     def __init__(self):
         super().__init__()
         dict.update(self, copy.deepcopy({**TRAJ_DEFAULTS, **default_traj}))
+        self._normalize_lambert()
+
+    def _normalize_lambert(self):
+        """lambert_types 长度对齐腿数: 不足补 0, 多出截断 (与 tof_bounds 的编辑语义一致)。
+        取值是否合法由 validate() 检查。"""
+        n = max(len(self["seq"]) - 1, 0)
+        lt = list(self.get("lambert_types") or [])
+        self["lambert_types"] = (lt + [0] * n)[:n]
 
     def __getattr__(self, name):
         try:
@@ -76,6 +84,11 @@ class TrajConfig(dict):
                 raise ValueError(f"tof_bounds[{i}] lo > hi, 实际 {b}")
         if not (is_num(self.rp_ub) and self.rp_ub > 0):
             raise ValueError(f"rp_ub 应为正数, 实际 {self.rp_ub}")
+        if len(self.lambert_types) != n_legs:
+            raise ValueError(f"lambert_types 应有 {n_legs} 个元素, 实际 {self.lambert_types}")
+        for i, k in enumerate(self.lambert_types):
+            if not (is_num(k) and float(k).is_integer() and int(k) in LAMBERT_INDICES):
+                raise ValueError(f"lambert_types[{i}] 应为 {list(LAMBERT_INDICES)} 之一, 实际 {k!r}")
         if (not isinstance(self.vinf_bounds_kmps, (list, tuple))
                 or len(self.vinf_bounds_kmps) != 2
                 or not all(is_num(v) for v in self.vinf_bounds_kmps)):
@@ -113,8 +126,10 @@ class TrajConfig(dict):
         cand = TrajConfig()
         dict.update(cand, self)
         dict.update(cand, patch)
+        cand._normalize_lambert()
         cand.validate()
         dict.update(self, patch)
+        self._normalize_lambert()
 
     @classmethod
     def from_dict(cls, d):

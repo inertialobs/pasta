@@ -68,7 +68,8 @@ def _dump_env(cfg, comp):
              f"os={platform.platform()} | cpu_cores={os.cpu_count()}")
     slog.inf(f"[env] seq={cfg.seq} | n_legs={len(cfg.seq) - 1} | objective={cfg.objective} | "
              f"dsm_limit={cfg.dsm_limit_ms:.0f} m/s | vinf_bounds={cfg.vinf_bounds_kmps}")
-    slog.inf(f"[env] eras={cfg.eras} | tof_bounds={cfg.tof_bounds} | rp_ub={cfg.rp_ub}")
+    slog.inf(f"[env] eras={cfg.eras} | tof_bounds={cfg.tof_bounds} | rp_ub={cfg.rp_ub} | "
+             f"lambert_types={cfg.lambert_types}")
     slog.inf(f"[env] jobs={comp['jobs']} | scan_keep_pct={comp['scan_keep_pct']} | "
              f"refine_keep_pct={comp['refine_keep_pct']} | era_step_d={comp['era_step_d']}")
     slog.inf(f"[env] run: scan={comp['run_scan']} seed={comp['run_seed']} "

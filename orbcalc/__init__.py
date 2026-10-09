@@ -6,7 +6,8 @@ orbcalc — 轨道弹道优化计算库
     config       TrajConfig (dict 子类) + 预设 + JSON 读写
     eras         发射窗口集合 EraSet (解析/校验/求交/窗口生成)
     planets      行星混合模型 (de440s 星历 + JPL 物理参数) + 注册表
-    udp          TOF_UDP / DSM_UDP (pykep.trajopt.mga_1dsm 封装)
+    mga          MGA1DSM (MGA-1DSM 轨迹模型, 每腿可选 Lambert 解: 1/2 | 3 | 4 类)
+    udp          TOF_UDP / DSM_UDP (基于 mga.MGA1DSM 的优化目标)
     engines      优化引擎: sade / nlopt(sbplx,cobyla) / compass / xnes / 并行任务
     stages       六阶段流水线 (多进程): scan / refine / seed / compress / pick
     decode_report 解向量解码 / 文本报告 / 结构化摘要
@@ -49,7 +50,11 @@ TRAJ_DEFAULTS = {
     "vinf_launch_limit_ms": 5000.0,
     "wa": 2e-5,                              # 到达 v∞ 超 9.0 km/s 罚 (m/s)
     "vinf_arrival_limit_ms": 9000.0,
+    # 每腿 Lambert 解索引 (长度 = 腿数, 缺省/不足时补 0):
+    #   0 -> 单圈 (类型 1/2), 1 -> 1 圈低能 (类型 3), 2 -> 1 圈高能 (类型 4)
+    "lambert_types": [],
 }
+LAMBERT_INDICES = (0, 1, 2)                  # 允许的 lambert_types 取值 (见 orbcalc/mga.py)
 
 # 系统字段 (Flask 服务)
 SYS_DEFAULTS = {"host": "127.0.0.1", "port": 8765, "open_browser": True}

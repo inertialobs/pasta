@@ -143,7 +143,7 @@ def test_build_plot_json_without_direction_fields_still_works(monkeypatch):
 def test_summarize_includes_rtn():
     from orbcalc.decode_report import summarize
 
-    cfg = SimpleNamespace(name="t", seq=["EARTH", "MARS"], dsm_limit_ms=600.0)
+    cfg = SimpleNamespace(name="t", seq=["EARTH", "MARS"], dsm_limit_ms=600.0, lambert_types=[0])
     info = {
         "t0": 0.0, "tofs": [100.0], "epochs": [0.0, 100.0],
         "dsm": [10.0], "dsm_total": 10.0,
@@ -163,7 +163,7 @@ def test_summarize_flyby_arrival_time_and_dsm_elapsed():
     from orbcalc.decode_report import summarize
 
     cfg = SimpleNamespace(name="t", seq=["EARTH", "VENUS", "MARS"],
-                          dsm_limit_ms=600.0, safe_radius={})
+                          dsm_limit_ms=600.0, safe_radius={}, lambert_types=[0, 0])
     info = {
         "t0": 0.0, "tofs": [100.0, 200.0], "epochs": [0.0, 100.0, 300.0],
         "dsm": [10.0, 20.0], "dsm_total": 30.0,

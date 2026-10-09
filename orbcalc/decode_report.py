@@ -170,6 +170,7 @@ def summarize(info, cfg):
             "tof_d": round(info["tofs"][i], 2),
             "dsm_ms": round(info["dsm"][i], 2),
             "eta": round(info["etas"][i], 4),
+            "lambert_type": int(cfg.lambert_types[i]),   # 0 -> 1/2, 1 -> 3, 2 -> 4
         }
         if 2 * i + 1 < len(bep):
             leg["dsm_iso"] = str(pk.epoch(bep[2 * i + 1]).to_datetime())

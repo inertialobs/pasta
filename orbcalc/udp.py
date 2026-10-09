@@ -12,6 +12,7 @@ import numpy as np
 import pykep as pk
 import pygmo as pg
 
+from .mga import MGA1DSM
 from .planets import build_seq
 
 
@@ -21,7 +22,7 @@ def _make_trajopt(cfg, t0, tof, vinf, add_vinf_dep=False, add_vinf_arr=True):
         # decode-only 场景: 用 era 全跨度作为占位边界, 不影响 _compute_dvs
         era = cfg.era_set.ranges
         t0 = [era[0][0], era[-1][1]]
-    return pk.trajopt.mga_1dsm(
+    return MGA1DSM(
         seq=seq, tof_encoding="direct",
         t0=[float(t0[0]), float(t0[1])],
         tof=tof if tof is not None else [list(b) for b in cfg.tof_bounds],
@@ -29,6 +30,7 @@ def _make_trajopt(cfg, t0, tof, vinf, add_vinf_dep=False, add_vinf_arr=True):
         add_vinf_dep=add_vinf_dep, add_vinf_arr=add_vinf_arr,
         multi_objective=False, orbit_insertion=False,
         eta_bounds=cfg.eta_bounds, rp_ub=cfg.rp_ub,   # pykep mga_1dsm 仅支持标量
+        lambert_types=cfg.lambert_types,
     )
 
 
