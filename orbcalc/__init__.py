@@ -5,7 +5,8 @@ orbcalc — 轨道弹道优化计算库
 模块:
     config       TrajConfig (dict 子类) + 预设 + JSON 读写
     eras         发射窗口集合 EraSet (解析/校验/求交/窗口生成)
-    planets      行星混合模型 (de440s 星历 + JPL 物理参数) + 注册表
+    planets      天体物理参数表 (BODY_PARAMS/ConstPhys) + de440s/kernel 星历封装 + 注册表
+    ephem        外部星历 (ephemeris/*.bsp) 扫描 / 启用 / 加载
     mga          MGA1DSM (MGA-1DSM 轨迹模型, 每腿可选 Lambert 解: 1/2 | 3 | 4 类)
     udp          TOF_UDP / DSM_UDP (基于 mga.MGA1DSM 的优化目标)
     engines      优化引擎: sade / nlopt(sbplx,cobyla) / compass / xnes / 并行任务
@@ -57,7 +58,8 @@ TRAJ_DEFAULTS = {
 LAMBERT_INDICES = (0, 1, 2)                  # 允许的 lambert_types 取值 (见 orbcalc/mga.py)
 
 # 系统字段 (Flask 服务)
-SYS_DEFAULTS = {"host": "127.0.0.1", "port": 8765, "open_browser": True}
+SYS_DEFAULTS = {"host": "127.0.0.1", "port": 8765, "open_browser": True,
+                "ephemerides": []}          # 已启用的外部星历 (ephemeris/*.bsp 文件名列表)
 
 # 计算字段 (任务的计算/并行参数; 每任务快照写入 runs/<jid>/config.json)
 COMPUTE_DEFAULTS = {

@@ -38,6 +38,7 @@ from pathlib import Path
 import numpy as np
 
 from .config import TrajConfig, ensure_project_name
+from .planets import set_active
 from .udp import TOF_UDP, DSM_UDP
 from .decode_report import report, summarize
 from .plot_data import build_plot_json, render_png
@@ -58,9 +59,13 @@ def _force_utf8_stdio():
 
 
 def _init_worker(debug=False):
-    """进程池 worker 初始化: 统一 UTF-8 stdio + slog 绑定 stderr (并传导 --debug)。"""
+    """进程池 worker 初始化: 统一 UTF-8 stdio + slog 绑定 stderr + 加载外部星历。"""
     _force_utf8_stdio()
     slog.setup(stream=sys.stderr, debug=debug)
+    try:
+        set_active(json.loads(os.environ.get("PASTA_EPHEMERIDES", "[]")))
+    except Exception:
+        pass
 
 
 def _dump_env(cfg, comp):
@@ -81,6 +86,9 @@ def _dump_env(cfg, comp):
 def _load(args):
     """读任务 JSON: 轨迹 -> TrajConfig, 计算 -> comp (缺省回退 settings 默认)."""
     data = json.loads(Path(args.config).read_text(encoding="utf-8"))
+    eph = list(data.get("ephemerides") or [])
+    set_active(eph)                              # 先启用外部星历, 再校验/构建天体
+    os.environ["PASTA_EPHEMERIDES"] = json.dumps(eph)   # 传导给 spawn worker
     cfg = TrajConfig.from_dict(data)
     comp = resolve_compute(data, args.jobs)
     cfg.validate()

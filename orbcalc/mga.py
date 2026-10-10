@@ -25,8 +25,9 @@ TOF 不足以容纳所需圈数时解数不够, 此时抛 ValueError, 由 UDP �
 """
 from __future__ import annotations
 
-from math import sqrt
+from math import pi, sqrt
 
+import numpy as np
 import pykep as pk
 
 from . import LAMBERT_INDICES, slog
@@ -94,6 +95,28 @@ class MGA1DSM(pk.trajopt.mga_1dsm):
     def lambert_types(self):
         return list(self._lambert_types)
 
+    def get_bounds(self):
+        """同 pykep get_bounds, 但对半径=0 的天体 (小行星路点) 用 rp 下界 0 代替
+        ``safe_radius/radius`` (否则 0/0)。半径>0 时结果与 pykep 逐位一致。"""
+        t0, tof, vinf, seq = self._t0, self._tof, self._vinf, self._seq
+        lb = ([t0[0].mjd2000]
+              + [0.0, 0.0, vinf[0] * 1000, self._eta_lb, 1e-3]
+              + [-2 * pi, np.nan, self._eta_lb, 1e-3] * (self.n_legs - 1))
+        ub = ([t0[1].mjd2000]
+              + [1.0, 1.0, vinf[1] * 1000, self._eta_ub, 1.0 - 1e-3]
+              + [2 * pi, self._rp_ub, self._eta_ub, 1.0 - 1e-3] * (self.n_legs - 1))
+        if self._tof_encoding == "alpha":
+            lb = lb + [tof[0]]
+            ub = ub + [tof[1]]
+        elif self._tof_encoding == "direct":
+            for i in range(self.n_legs):
+                lb[5 + 4 * i] = tof[i][0]
+                ub[5 + 4 * i] = tof[i][1]
+        for i, pl in enumerate(seq[1:-1]):
+            r = getattr(pl, "radius", 0.0)
+            lb[7 + 4 * i] = (pl.safe_radius / r) if r > 0 else 0.0
+        return (lb, ub)
+
     # ------------------------------------------------------------------
     def _solve_leg(self, leg, r0, r1, dt):
         """第 leg 腿的 Lambert 解 (v0, v1, 原始解对象); 所选解不存在时抛 ValueError。"""
@@ -139,13 +162,17 @@ class MGA1DSM(pk.trajopt.mga_1dsm):
 
         # 4 - 其余各腿: 借力 -> 传播至 DSM -> Lambert -> 下一交会点
         for i in range(1, self.n_legs):
-            v_out = pk.fb_vout(
-                v_in=v_end_l,
-                v_pla=v_P[i],
-                rp=x[7 + (i - 1) * 4] * self._seq[i].radius,
-                beta=x[6 + (i - 1) * 4],
-                mu=self._seq[i].mu_self,
-            )
+            mu_i = self._seq[i].mu_self
+            if mu_i > 0.0:
+                v_out = pk.fb_vout(
+                    v_in=v_end_l,
+                    v_pla=v_P[i],
+                    rp=x[7 + (i - 1) * 4] * self._seq[i].radius,
+                    beta=x[6 + (i - 1) * 4],
+                    mu=mu_i,
+                )
+            else:
+                v_out = list(v_end_l)      # μ=0: 无引力借力, 定时路点直通 (v_out=v_in)
             ballistic_legs.append((r_P[i], v_out))
             ballistic_ep.append(t_P[i].mjd2000)
             r, v = pk.propagate_lagrangian(

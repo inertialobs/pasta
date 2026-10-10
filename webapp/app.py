@@ -24,7 +24,7 @@ from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request, send_from_directory
 
-from orbcalc import COMPUTE_FIELDS, SYS_FIELDS, TRAJ_FIELDS, slog
+from orbcalc import COMPUTE_FIELDS, SYS_FIELDS, TRAJ_FIELDS, ephem, planets, slog
 from orbcalc.config import TrajConfig, ensure_project_name, sanitize_name
 from orbcalc.settings import CONFIG_FILE, settings, resolve_compute
 
@@ -36,8 +36,12 @@ from _version import (__version__, commit, commit_full, commit_date,
 ROOT = Path.cwd()
 RUNS_DIR = ROOT / "runs"
 PRESETS_DIR = ROOT / "presets"          # 用户预设 (可写)
-for _d in (RUNS_DIR, PRESETS_DIR):
+EPHEMERIS_DIR = ROOT / ephem.DIRNAME    # 外部星历 (*.bsp, 用户自备)
+for _d in (RUNS_DIR, PRESETS_DIR, EPHEMERIS_DIR):
     _d.mkdir(parents=True, exist_ok=True)
+
+# 启用系统配置里的外部星历 (启用列表只影响可用天体/Kernel 加载)
+planets.set_active(settings["ephemerides"])
 
 
 def _job_dir(jid: str) -> Path | None:
@@ -107,6 +111,7 @@ class JobManager:
         ensure_project_name(cfg)
         comp = resolve_compute(config_dict, jobs_override)
         job_cfg = {**dict(cfg), **comp}   # 轨迹 + 计算快照, 供 run_cli 读取
+        job_cfg["ephemerides"] = list(settings["ephemerides"])   # 外部星历 (子进程/worker 加载)
         request_cfg = dict(config_dict)
         request_cfg["name"] = cfg.name
         with self._lock:
@@ -586,19 +591,40 @@ def create_app() -> Flask:
         out = {k: settings[k] for k in SYS_FIELDS}
         out["is_lan"] = settings["host"] in ("0.0.0.0", "::")
         out["path"] = os.path.abspath(CONFIG_FILE)
+        out["ephemeris_options"] = ephem.options()
         return jsonify(out)
 
     @app.post("/api/sysconfig")
     def set_sysconfig():
-        """保存系统配置 (host/port/浏览器…), 重启后生效."""
+        """保存系统配置 (host/port/浏览器/星历…)."""
         body = request.get_json(force=True, silent=True) or {}
         try:
             settings.update(body)
             settings.save_file()
+            if "ephemerides" in body:
+                ephem.reset_cache()
+                planets.set_active(settings["ephemerides"])
         except Exception as e:
             return jsonify({"error": str(e)}), 400
         return jsonify({"saved": True, "path": os.path.abspath(CONFIG_FILE),
                         "restart_required": True}), 200
+
+    @app.post("/api/ephemeris/rescan")
+    def rescan_ephemeris():
+        """重新扫描 ephemeris/ 并套用当前启用列表."""
+        ephem.reset_cache()
+        planets.set_active(settings["ephemerides"])
+        return jsonify({"options": ephem.options()})
+
+    @app.get("/api/bodies")
+    def list_bodies():
+        """可用天体: 内置行星 ∪ 已启用 kernel 天体 (供前端下拉)."""
+        out = {}
+        for tag in sorted(planets.known_tags()):
+            info = planets.body_info(tag)
+            if info:
+                out[tag] = info
+        return jsonify(out)
 
     @app.post("/api/shutdown")
     def shutdown():
