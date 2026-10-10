@@ -52,18 +52,26 @@ const state = {
 /* ============================================================
  * 预设与配置表单
  * ============================================================ */
+/* 启动时默认载入的预设标题; 不在列表里则回退到第一个 */
+const DEFAULT_PRESET = "EVVEJS 1997-01";
+
 async function loadPresets() {
   try {
     const p = await jfetch("/api/presets");
     const sel = $("presetSelect");
+    const names = Object.keys(p || {});
     sel.innerHTML = "";
-    Object.keys(p || {}).forEach(name => {
+    names.forEach(name => {
       const opt = document.createElement("option");
       opt.value = name; opt.textContent = name;
       sel.appendChild(opt);
     });
-    const first = Object.values(p || {})[0];
-    if (first) fillTrajForm(first);
+    // 优先载入指定默认预设 (不依赖文件名排序), 不存在时回退到第一个
+    const chosen = names.includes(DEFAULT_PRESET) ? DEFAULT_PRESET : names[0];
+    if (chosen) {
+      sel.value = chosen;        // 下拉显示与表单内容保持一致 (程序改 value 不触发 change)
+      fillTrajForm(p[chosen]);
+    }
   } catch (e) { console.error("presets", e); }
 }
 

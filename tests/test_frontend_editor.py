@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import json
 from datetime import date
+from pathlib import Path
 
 from playwright.sync_api import expect
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def read_config(page):
@@ -198,3 +201,72 @@ def test_loading_a_config_restores_mixed_transfer_types(editor_page):
     expect(leg_lam(page, 0)).to_have_text("3")
     expect(leg_lam(page, 1)).to_have_text("4")
     assert read_config(page)["lambert_types"] == [1, 2]
+
+
+def _mock_presets_page(page, live_server, presets):
+    """Serve the mocked API (with the given presets) and navigate to the app."""
+    import copy
+
+    from orbcalc import COMPUTE_DEFAULTS
+
+    api = {
+        "/api/health": {"host": "127.0.0.1", "port": 8765, "describe": "test", "lan": False},
+        "/api/presets": presets,
+        "/api/compcfg": {**COMPUTE_DEFAULTS, "jobs": 1, "era_step_d": 10},
+        "/api/jobs": [],
+    }
+
+    def handler(route):
+        payload = api.get(route.request.url.split("?", 1)[0].removeprefix(live_server))
+        if payload is None:
+            route.fulfill(status=404, body="unexpected API request")
+            return
+        route.fulfill(status=200, content_type="application/json; charset=utf-8",
+                      body=json.dumps(payload, ensure_ascii=False))
+
+    page.route("**/api/**", handler)
+    page.goto(live_server)
+    return copy
+
+
+def _evvejs_default():
+    import copy
+
+    from orbcalc import TRAJ_DEFAULTS
+
+    raw = json.loads((ROOT / "presets" / "traj_evvejs_cassini.json").read_text(encoding="utf-8"))
+    cfg = copy.deepcopy(TRAJ_DEFAULTS)
+    cfg.update(raw)
+    return raw["title"], cfg
+
+
+def test_default_preset_is_loaded_even_when_not_first(page, live_server):
+    import copy
+
+    from orbcalc import TRAJ_DEFAULTS
+
+    title, default_cfg = _evvejs_default()
+    other = copy.deepcopy(TRAJ_DEFAULTS)
+    other.update({"seq": ["EARTH", "MARS"], "tof_bounds": [[100, 200]],
+                  "eras": [["2029-01-01", "2030-01-01"]]})
+    # 默认项故意排在后面 (dict 顺序即 API 返回顺序)
+    presets = {"AAA other": other, title: default_cfg}
+
+    _mock_presets_page(page, live_server, presets)
+    page.wait_for_function(f"() => document.querySelector('#presetSelect').value === {title!r}")
+    assert page.locator("#presetSelect").input_value() == title
+    assert read_config(page)["seq"] == default_cfg["seq"]
+
+
+def test_default_preset_falls_back_to_first_when_absent(page, live_server):
+    import copy
+
+    from orbcalc import TRAJ_DEFAULTS
+
+    other = copy.deepcopy(TRAJ_DEFAULTS)
+    other.update({"seq": ["EARTH", "MARS"], "tof_bounds": [[100, 200]],
+                  "eras": [["2029-01-01", "2030-01-01"]]})
+
+    _mock_presets_page(page, live_server, {"AAA other": other})
+    page.wait_for_function("() => document.querySelector('#presetSelect').value === 'AAA other'")
+    assert read_config(page)["seq"] == ["EARTH", "MARS"]
