@@ -47,6 +47,7 @@ const state = {
   jobs: [], activeJobId: null, pollTimer: null, plotlyReady: false,
   seq: [], pendingTofBounds: null, pendingLambert: null, busy: false, showDsmDir: true,
   timeMode: "elapsed", dsmMode: "total", arriveMode: "elapsed", lastResult: null,
+  bodies: null,   // /api/bodies: 可用天体 (内置行星 ∪ 已启用 kernel 天体)
 };
 
 /* ============================================================
@@ -143,7 +144,7 @@ function makeNodeRow(tag) {
   row.innerHTML = `
     <select data-k="tag">${planetOptions(tag)}</select>
     <span class="node-settings" data-k="settings">
-      <span class="node-safe">${PLANETS[tag] ? PLANETS[tag].note : ""}</span>
+      <span class="node-safe">${bodyNote(tag)}</span>
     </span>
     <span class="node-moves">
       <button class="node-move up" title="上移">↑</button>
@@ -176,9 +177,35 @@ function readLegLambert() {
   return arr;
 }
 
+/* 可用天体: 优先 /api/bodies (含 kernel 天体), 未加载时回退内置 8 大行星 */
+function bodyTags() {
+  return (state.bodies && Object.keys(state.bodies).length)
+    ? Object.keys(state.bodies) : Object.keys(PLANETS);
+}
+function bodyLabel(tag) {
+  if (PLANETS[tag]) return PLANETS[tag].label;                 // 内置中文标签优先
+  const b = state.bodies && state.bodies[tag];
+  return (b && b.label) ? b.label : tag;
+}
+function bodyNote(tag) {
+  if (PLANETS[tag]) return PLANETS[tag].note;
+  const b = state.bodies && state.bodies[tag];
+  return (b && b.note) ? b.note : "";
+}
+async function loadBodies() {
+  try { state.bodies = await jfetch("/api/bodies"); } catch (e) { state.bodies = null; }
+}
+/* 启用星历变化后, 刷新各节点行星下拉的选项 (保留当前值) */
+function refreshPlanetOptions() {
+  document.querySelectorAll('#seqNodes .node-row select[data-k="tag"]').forEach(sel => {
+    const cur = sel.value;
+    sel.innerHTML = planetOptions(cur);
+  });
+}
+
 function planetOptions(sel) {
-  return Object.entries(PLANETS).map(([tag, p]) =>
-    `<option value="${tag}" ${tag === sel ? "selected" : ""}>${p.label}</option>`).join("");
+  return bodyTags().map(tag =>
+    `<option value="${tag}" ${tag === sel ? "selected" : ""}>${escapeHtml(bodyLabel(tag))}</option>`).join("");
 }
 
 /* 重新计算角色/设置 (行星变化或增删移后) */
@@ -192,7 +219,7 @@ function refreshSeqRoles() {
     const current = row.querySelector(".node-settings");
     current.innerHTML = "";
     const tag = row.querySelector('select[data-k="tag"]').value;
-    const safe = PLANETS[tag] ? PLANETS[tag].note : "";
+    const safe = bodyNote(tag);
     current.insertAdjacentHTML("beforeend",
       `<span class="node-safe">${safe}</span>`);
     const del = row.querySelector(".node-del");
@@ -910,9 +937,34 @@ async function loadSysConfig() {
     $("sysLan").checked = (s.host === "0.0.0.0" || s.host === "::");
     $("sysPort").value = s.port;
     $("sysOpenBrowser").checked = !!s.open_browser;
+    renderEphemerisList(s.ephemeris_options || [], s.ephemerides || []);
     const bw = $("sysLanWarnBanner");
     if (bw) bw.classList.toggle("hidden", !$("sysLan").checked);
   } catch (e) { console.error(e); }
+}
+
+/* 外部星历: 扫描结果勾选列表 */
+function renderEphemerisList(opts, chosen) {
+  const box = $("sysEphemList");
+  if (!box) return;
+  const sel = new Set(chosen || []);
+  box.innerHTML = "";
+  if (!opts.length) {
+    box.innerHTML = '<div class="hint">(未发现 *.bsp — 放入 ephemeris/ 后点"重新扫描")</div>';
+    return;
+  }
+  opts.forEach(o => {
+    const mb = (o.size / 1048576).toFixed(1);
+    const lab = document.createElement("label");
+    lab.className = "ephem-item";
+    lab.innerHTML = `<input type="checkbox" value="${escapeHtml(o.file)}" ${sel.has(o.file) ? "checked" : ""}> ` +
+      `<span class="eph-name">${escapeHtml(o.file)}</span> ` +
+      `<span class="eph-meta">${o.n_bodies} 天体 · ${mb} MB</span>`;
+    box.appendChild(lab);
+  });
+}
+function selectedEphemerides() {
+  return [...document.querySelectorAll("#sysEphemList input[type=checkbox]:checked")].map(c => c.value);
 }
 
 /* 关于: 懒加载一次 */
@@ -968,6 +1020,15 @@ $("sysOpen").addEventListener("click", async () => {
   $("sysModal").classList.remove("hidden");
 });
 $("aboutOpen").addEventListener("click", openAbout);
+$("sysEphemRescan").addEventListener("click", async () => {
+  try {
+    const r = await fetch("/api/ephemeris/rescan", { method: "POST" });
+    const j = await r.json();
+    if (!r.ok) { alert("扫描失败: " + (j.error || r.statusText)); return; }
+    renderEphemerisList(j.options || [], selectedEphemerides());
+    await loadBodies(); refreshPlanetOptions();
+  } catch (e) { alert("扫描失败: " + e.message); }
+});
 $("sysClose").addEventListener("click", closeModal);
 $("aboutClose").addEventListener("click", closeModal);
 $("sysSave").addEventListener("click", async () => {
@@ -983,10 +1044,12 @@ $("sysSave").addEventListener("click", async () => {
         host: lan ? "0.0.0.0" : "127.0.0.1",
         port: +$("sysPort").value,
         open_browser: $("sysOpenBrowser").checked,
+        ephemerides: selectedEphemerides(),
       }),
     });
     const j = await r.json();
     if (!r.ok) { alert("保存失败: " + (j.error || r.statusText)); return; }
+    await loadBodies(); refreshPlanetOptions();   // 启用星历立即反映到天体下拉
     alert("已保存。需重启程序后生效 (host/port)。");
     closeModal();
   } catch (e) { alert("保存失败: " + e.message); }
@@ -1015,6 +1078,7 @@ $("sysSave").addEventListener("click", async () => {
   } catch (e) { console.error(e); }
   // 一次性提示: 关标签=后台继续 (可删, 不影响脚本)
   { const ch = $("closeHint"); if (ch) ch.classList.remove("hidden"); }
+  await loadBodies();
   await loadPresets();
   await loadCompCfg();
   await loadJobList();

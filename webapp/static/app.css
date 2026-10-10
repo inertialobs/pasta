@@ -254,3 +254,13 @@ th .seg { vertical-align: middle; }
               padding: 4px 0 4px 10px; }
 .disclaimer p { margin: 6px 0; }
 .disclaimer a { color: var(--acc); }
+/* ---------- 系统设置: 外部星历列表 ---------- */
+hr.sep { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
+.ephem-head { display: block; font-size: 12.5px; color: var(--dim); margin: 6px 0; }
+.ephem-list { max-height: 180px; overflow: auto; border: 1px solid var(--line);
+              border-radius: 8px; padding: 6px; background: #0c121f; }
+.ephem-list .hint { margin: 4px; }
+.ephem-item { display: flex; align-items: center; gap: 6px; padding: 3px 4px;
+              font-size: 12.5px; cursor: pointer; }
+.ephem-item .eph-name { color: var(--txt); }
+.ephem-item .eph-meta { color: var(--dim); font-size: 11px; margin-left: auto; }

@@ -179,6 +179,13 @@
           <label><input type="checkbox" id="sysOpenBrowser"> 启动时自动打开浏览器</label>
         </div>
         <p class="hint">port=0 表示随机空闲端口。改动保存后需重启程序生效。</p>
+        <hr class="sep">
+        <label class="ephem-head">外部星历 (ephemeris/)</label>
+        <div id="sysEphemList" class="ephem-list"></div>
+        <p class="hint">把 *.bsp 星历文件放入程序目录的 ephemeris/ 下, 勾选启用 (可多选); 启用 kernel 里的天体将加入行星下拉。</p>
+        <div class="actions">
+          <button id="sysEphemRescan" class="ghost">重新扫描</button>
+        </div>
         <div class="actions">
           <button id="sysSave" class="primary">保存</button>
           <button id="sysClose" class="ghost">取消</button>

@@ -270,3 +270,49 @@ def test_default_preset_falls_back_to_first_when_absent(page, live_server):
     _mock_presets_page(page, live_server, {"AAA other": other})
     page.wait_for_function("() => document.querySelector('#presetSelect').value === 'AAA other'")
     assert read_config(page)["seq"] == ["EARTH", "MARS"]
+
+
+def test_kernel_bodies_and_ephemeris_settings(page, live_server):
+    import copy
+
+    from orbcalc import COMPUTE_DEFAULTS
+
+    title, default_cfg = _evvejs_default()
+    bodies = {t: {"label": t.title(), "note": "", "builtin": True}
+              for t in ["MERCURY", "VENUS", "EARTH", "MARS", "JUPITER",
+                        "SATURN", "URANUS", "NEPTUNE"]}
+    bodies["CERES"] = {"label": "Ceres", "note": "外部星历 (kernel)", "builtin": False}
+    api = {
+        "/api/health": {"host": "127.0.0.1", "port": 8765, "describe": "test", "lan": False},
+        "/api/presets": {title: default_cfg},
+        "/api/compcfg": {**COMPUTE_DEFAULTS, "jobs": 1, "era_step_d": 10},
+        "/api/jobs": [],
+        "/api/bodies": bodies,
+        "/api/sysconfig": {"host": "127.0.0.1", "port": 8765, "open_browser": True,
+                           "ephemerides": ["ceres_test.bsp"],
+                           "ephemeris_options": [{"file": "ceres_test.bsp", "size": 123456,
+                                                  "n_bodies": 1, "coverage": None}]},
+    }
+
+    def handler(route):
+        payload = api.get(route.request.url.split("?", 1)[0].removeprefix(live_server))
+        if payload is None:
+            route.fulfill(status=404, body="unexpected API request")
+            return
+        route.fulfill(status=200, content_type="application/json; charset=utf-8",
+                      body=json.dumps(payload, ensure_ascii=False))
+
+    page.route("**/api/**", handler)
+    page.goto(live_server)
+    page.wait_for_function(
+        "() => [...document.querySelectorAll(\"#seqNodes select[data-k='tag'] option\")]"
+        ".some(o => o.value === 'CERES')")
+    values = page.locator("#seqNodes .node-row").first.locator(
+        "select[data-k='tag'] option").evaluate_all("els => els.map(e => e.value)")
+    assert "CERES" in values
+
+    page.locator("#sysOpen").click()
+    page.wait_for_selector("#sysEphemList .ephem-item")
+    text = page.locator("#sysEphemList").inner_text()
+    assert "ceres_test.bsp" in text and "1 天体" in text
+    assert page.locator("#sysEphemList input[type=checkbox]").first.is_checked()
