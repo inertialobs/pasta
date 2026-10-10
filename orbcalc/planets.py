@@ -87,9 +87,16 @@ def _resolve(tag):
         return None, None
     if base is not None:                       # 表里有物理参数 (如矮行星), 星历来自 kernel
         spec = dict(base)
-    else:                                      # 表外天体 (小行星等): 默认 μ=0/半径=0
-        spec = {"name": kb["name"], "mu_self": DEFAULT_BODY["mu_self"],
-                "radius": DEFAULT_BODY["radius"], "safe_radius": DEFAULT_BODY["safe_radius"]}
+    else:
+        side = ephem.sidecar_for_naif(kb["naif"])
+        if side is not None:                   # 抓取时自动填的 μ/半径 (Horizons 头)
+            spec = {"name": side.get("name") or kb["name"],
+                    "mu_self": float(side.get("mu_self") or 0.0),
+                    "radius": float(side.get("radius") or 0.0),
+                    "safe_radius": float(side.get("safe_radius") or 0.0)}
+        else:                                  # 无旁挂: 默认 μ=0/半径=0 (定时路点)
+            spec = {"name": kb["name"], "mu_self": DEFAULT_BODY["mu_self"],
+                    "radius": DEFAULT_BODY["radius"], "safe_radius": DEFAULT_BODY["safe_radius"]}
     spec["naif"] = kb["naif"]
     spec["spice"] = kb["naif"]                 # 用 NAIF id 直接定位 (名可能不规范)
     return spec, kb["file"]
@@ -230,7 +237,11 @@ def planet_safe_radius(tag, cfg):
     base = BODY_PARAMS.get(tag)
     if base is not None:
         return base["safe_radius"]
-    if tag in _kernel_bodies():
+    kb = _kernel_bodies().get(tag)
+    if kb is not None:
+        side = ephem.sidecar_for_naif(kb["naif"])
+        if side is not None and side.get("safe_radius") is not None:
+            return float(side["safe_radius"])
         return DEFAULT_BODY["safe_radius"]
     return None
 

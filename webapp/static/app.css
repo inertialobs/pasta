@@ -264,3 +264,18 @@ hr.sep { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
               font-size: 12.5px; cursor: pointer; }
 .ephem-item .eph-name { color: var(--txt); }
 .ephem-item .eph-meta { color: var(--dim); font-size: 11px; margin-left: auto; }
+
+/* ---------- 设置: 添加天体 ---------- */
+.ephem-search { display: flex; gap: 6px; margin-bottom: 6px; }
+.ephem-search input { flex: 1; min-width: 0; background: #0c121f; color: var(--txt);
+                      border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font-size: 13px; }
+.ephem-results { display: flex; flex-direction: column; gap: 3px; margin: 4px 0; }
+.eph-result { display: flex; align-items: center; gap: 6px; font-size: 12.5px; padding: 3px 6px;
+              border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+.eph-result.disabled { opacity: .5; cursor: default; }
+.eph-result .eph-meta { color: var(--dim); font-size: 11px; margin-left: auto; }
+.ephem-adv { margin: 6px 0; }
+.ephem-adv summary { cursor: pointer; font-size: 12px; color: var(--acc); }
+.ephem-adv .field { margin: 4px 0; }
+.eph-del { border: 0; background: transparent; color: var(--bad); cursor: pointer;
+           font-size: 13px; padding: 0 4px; margin-left: 4px; }

@@ -186,6 +186,23 @@
         <div class="actions">
           <button id="sysEphemRescan" class="ghost">重新扫描</button>
         </div>
+
+        <label class="ephem-head">添加天体 (从 JPL Horizons 下载)</label>
+        <div class="ephem-search">
+          <input id="sysHorizonsQuery" type="text" placeholder="名称/编号, 如 Ryugu / 162173 / Jupiter">
+          <button id="sysHorizonsSearch" class="ghost">搜索</button>
+        </div>
+        <div id="sysHorizonsResults" class="ephem-results"></div>
+        <details class="ephem-adv">
+          <summary>高级 (时间跨度 / 步长)</summary>
+          <div class="field"><label>起始</label><input id="sysEphT0" type="date"></div>
+          <div class="field"><label>结束</label><input id="sysEphT1" type="date"></div>
+          <div class="field"><label>步长 (天)</label><input id="sysEphStep" type="number" min="1" step="1" placeholder="自适应"></div>
+        </details>
+        <div class="actions">
+          <button id="sysHorizonsDownload" class="primary" disabled>下载并添加</button>
+        </div>
+        <p class="hint" id="sysHorizonsMsg"></p>
         <div class="actions">
           <button id="sysSave" class="primary">保存</button>
           <button id="sysClose" class="ghost">取消</button>

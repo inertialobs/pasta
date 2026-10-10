@@ -938,6 +938,13 @@ async function loadSysConfig() {
     $("sysPort").value = s.port;
     $("sysOpenBrowser").checked = !!s.open_browser;
     renderEphemerisList(s.ephemeris_options || [], s.ephemerides || []);
+    if (s.ephemeris_span) {
+      $("sysEphT0").value = mjdToDate(s.ephemeris_span[0]);
+      $("sysEphT1").value = mjdToDate(s.ephemeris_span[1]);
+    }
+    $("sysHorizonsResults").innerHTML = "";
+    $("sysHorizonsMsg").textContent = "";
+    $("sysHorizonsDownload").disabled = true;
     const bw = $("sysLanWarnBanner");
     if (bw) bw.classList.toggle("hidden", !$("sysLan").checked);
   } catch (e) { console.error(e); }
@@ -959,7 +966,8 @@ function renderEphemerisList(opts, chosen) {
     lab.className = "ephem-item";
     lab.innerHTML = `<input type="checkbox" value="${escapeHtml(o.file)}" ${sel.has(o.file) ? "checked" : ""}> ` +
       `<span class="eph-name">${escapeHtml(o.file)}</span> ` +
-      `<span class="eph-meta">${o.n_bodies} 天体 · ${mb} MB</span>`;
+      `<span class="eph-meta">${o.n_bodies} 天体 · ${mb} MB</span>` +
+      `<button class="eph-del" title="删除该星历" data-file="${escapeHtml(o.file)}">✕</button>`;
     box.appendChild(lab);
   });
 }
@@ -1028,6 +1036,81 @@ $("sysEphemRescan").addEventListener("click", async () => {
     renderEphemerisList(j.options || [], selectedEphemerides());
     await loadBodies(); refreshPlanetOptions();
   } catch (e) { alert("扫描失败: " + e.message); }
+});
+$("sysEphemList").addEventListener("click", async (e) => {
+  const b = e.target.closest(".eph-del");
+  if (!b) return;
+  const file = b.dataset.file;
+  if (!confirm("删除星历文件 " + file + " ?")) return;
+  try {
+    const r = await fetch("/api/ephemeris/" + encodeURIComponent(file), { method: "DELETE" });
+    const j = await r.json();
+    if (!r.ok) { alert("删除失败: " + (j.error || r.statusText)); return; }
+    const s = await jfetch("/api/sysconfig");
+    renderEphemerisList(s.ephemeris_options || [], s.ephemerides || []);
+    await loadBodies(); refreshPlanetOptions();
+  } catch (e) { alert("删除失败: " + e.message); }
+});
+
+/* 日期 <-> MJD2000 (2000-01-01 UTC 起算, 与后端一致) */
+function dateToMjd(s) {
+  if (!s) return undefined;
+  return (Date.parse(s + "T00:00:00Z") - Date.UTC(2000, 0, 1)) / 86400000;
+}
+function mjdToDate(m) {
+  return new Date(Date.UTC(2000, 0, 1) + Math.round(m) * 86400000).toISOString().slice(0, 10);
+}
+function renderHorizonsResults(results) {
+  const box = $("sysHorizonsResults");
+  box.innerHTML = "";
+  if (!results.length) { box.innerHTML = '<div class="hint">未找到天体</div>'; return; }
+  results.forEach((c, i) => {
+    const disabled = c.naif == null || !c.horizons;
+    const row = document.createElement("label");
+    row.className = "eph-result" + (disabled ? " disabled" : "");
+    row.dataset.json = JSON.stringify(c);
+    row.innerHTML = `<input type="radio" name="hz" value="${i}" ${disabled ? "disabled" : (i === 0 ? "checked" : "")}> ` +
+      `<span class="eph-name">${escapeHtml(c.label || "")}</span> ` +
+      `<span class="eph-meta">${escapeHtml(c.kind || "")}${c.orbit_class ? " · " + escapeHtml(c.orbit_class) : ""}${disabled ? " · 暂不支持" : ""}</span>`;
+    box.appendChild(row);
+  });
+  $("sysHorizonsDownload").disabled = !results.some(c => c.naif != null && c.horizons);
+}
+$("sysHorizonsSearch").addEventListener("click", async () => {
+  const q = $("sysHorizonsQuery").value.trim();
+  if (!q) return;
+  $("sysHorizonsResults").innerHTML = '<div class="hint">搜索中…</div>';
+  $("sysHorizonsDownload").disabled = true;
+  try {
+    const r = await jfetch("/api/horizons/search?q=" + encodeURIComponent(q));
+    renderHorizonsResults(r.results || []);
+  } catch (e) { $("sysHorizonsResults").innerHTML = `<div class="hint">搜索失败: ${escapeHtml(e.message)}</div>`; }
+});
+$("sysHorizonsDownload").addEventListener("click", async () => {
+  const sel = document.querySelector('#sysHorizonsResults input[name="hz"]:checked');
+  if (!sel) return;
+  const cand = JSON.parse(sel.closest(".eph-result").dataset.json);
+  const msg = $("sysHorizonsMsg");
+  msg.textContent = "下载中… (JPL Horizons)";
+  try {
+    const r = await fetch("/api/ephemeris/add", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        naif: cand.naif, horizons: cand.horizons, name: cand.label,
+        t0: dateToMjd($("sysEphT0").value), t1: dateToMjd($("sysEphT1").value),
+        step: +$("sysEphStep").value || 0,
+      }),
+    });
+    const j = await r.json();
+    if (!r.ok) { msg.textContent = "失败: " + (j.error || r.statusText); return; }
+    const chosen = selectedEphemerides();
+    if (!chosen.includes(j.file)) chosen.push(j.file);
+    const s = await jfetch("/api/sysconfig");
+    renderEphemerisList(s.ephemeris_options || [], chosen);
+    await loadBodies(); refreshPlanetOptions();
+    msg.textContent = `已添加 ${j.file}` + (j.radius_m ? ` (R=${Math.round(j.radius_m)} m)` : "")
+      + (j.warning ? " ⚠ " + j.warning : "");
+  } catch (e) { msg.textContent = "失败: " + e.message; }
 });
 $("sysClose").addEventListener("click", closeModal);
 $("aboutClose").addEventListener("click", closeModal);

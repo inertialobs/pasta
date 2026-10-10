@@ -316,3 +316,69 @@ def test_kernel_bodies_and_ephemeris_settings(page, live_server):
     text = page.locator("#sysEphemList").inner_text()
     assert "ceres_test.bsp" in text and "1 天体" in text
     assert page.locator("#sysEphemList input[type=checkbox]").first.is_checked()
+
+
+def _json_route(route, payload, status=200):
+    route.fulfill(status=status, content_type="application/json; charset=utf-8",
+                  body=json.dumps(payload, ensure_ascii=False))
+
+
+def test_add_body_search_download_and_delete(page, live_server):
+    from orbcalc import COMPUTE_DEFAULTS
+
+    title, default_cfg = _evvejs_default()
+    state = {"ephemerides": []}
+
+    def handler(route):
+        url = route.request.url.split("?", 1)[0].removeprefix(live_server)
+        method = route.request.method
+        if url == "/api/health":
+            return _json_route(route, {"host": "127.0.0.1", "port": 8765, "describe": "t", "lan": False})
+        if url == "/api/presets":
+            return _json_route(route, {title: default_cfg})
+        if url == "/api/compcfg":
+            return _json_route(route, {**COMPUTE_DEFAULTS, "jobs": 1, "era_step_d": 10})
+        if url == "/api/jobs":
+            return _json_route(route, [])
+        if url == "/api/bodies":
+            return _json_route(route, {"EARTH": {"label": "Earth", "note": "", "builtin": True}})
+        if url == "/api/sysconfig" and method == "GET":
+            return _json_route(route, {
+                "host": "127.0.0.1", "port": 8765, "open_browser": True,
+                "ephemerides": state["ephemerides"], "ephemeris_span": [4000.0, 5000.0],
+                "ephemeris_options": [{"file": f, "size": 1000, "n_bodies": 1, "coverage": None}
+                                      for f in state["ephemerides"]]})
+        if url == "/api/horizons/search":
+            return _json_route(route, {"results": [
+                {"kind": "small_body", "naif": 2162173, "label": "162173 Ryugu",
+                 "orbit_class": "Apollo", "horizons": "162173;"}]})
+        if url == "/api/ephemeris/add" and method == "POST":
+            state["ephemerides"].append("ryugu.bsp")
+            return _json_route(route, {"file": "ryugu.bsp", "naif": 2162173, "name": "Ryugu",
+                                       "radius_m": 448.0, "coverage": [4000, 5000], "warning": None})
+        if url.startswith("/api/ephemeris/") and method == "DELETE":
+            fn = url.rsplit("/", 1)[1]
+            state["ephemerides"] = [f for f in state["ephemerides"] if f != fn]
+            return _json_route(route, {"deleted": fn})
+        return _json_route(route, {"error": "unexpected " + url}, status=404)
+
+    page.route("**/api/**", handler)
+    page.on("dialog", lambda d: d.accept())      # 删除确认框
+    page.goto(live_server)
+    page.wait_for_selector("#seqNodes .node-row")
+
+    page.locator("#sysOpen").click()
+    page.locator("#sysHorizonsQuery").fill("Ryugu")
+    page.locator("#sysHorizonsSearch").click()
+    page.wait_for_selector("#sysHorizonsResults .eph-result")
+    assert "Ryugu" in page.locator("#sysHorizonsResults").inner_text()
+
+    page.locator("#sysHorizonsDownload").click()
+    page.wait_for_function(
+        "() => [...document.querySelectorAll('#sysEphemList .eph-name')]"
+        ".some(e => e.textContent.includes('ryugu.bsp'))")
+
+    page.locator("#sysEphemList .eph-del").first.click()
+    page.wait_for_function(
+        "() => ![...document.querySelectorAll('#sysEphemList .eph-name')]"
+        ".some(e => e.textContent.includes('ryugu.bsp'))")

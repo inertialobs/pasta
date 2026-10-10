@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -24,7 +25,7 @@ from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request, send_from_directory
 
-from orbcalc import COMPUTE_FIELDS, SYS_FIELDS, TRAJ_FIELDS, ephem, planets, slog
+from orbcalc import COMPUTE_FIELDS, SYS_FIELDS, TRAJ_FIELDS, ephem, horizons, planets, slog
 from orbcalc.config import TrajConfig, ensure_project_name, sanitize_name
 from orbcalc.settings import CONFIG_FILE, settings, resolve_compute
 
@@ -479,6 +480,23 @@ def _subdict(d: dict, fields: set) -> dict:
     return {k: v for k, v in d.items() if k in fields}
 
 
+def _short_body_name(label: str) -> str:
+    """SBDB 显示名去掉前导编号: '162173 Ryugu' -> 'Ryugu'。"""
+    s = re.sub(r"^\s*\d+\s+", "", str(label or "")).strip()
+    return s or str(label or "")
+
+
+def _slug(text: str, fallback: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", str(text).lower()).strip("_") or fallback
+
+
+def _sidecar_naif(p: Path):
+    try:
+        return int(json.loads(p.with_suffix(".json").read_text(encoding="utf-8")).get("naif"))
+    except Exception:
+        return None
+
+
 def _load_preset_dir(dirpath: Path, traj: dict) -> None:
     """扫描目录里的任务预设 JSON 并就地并入 traj.
 
@@ -592,6 +610,7 @@ def create_app() -> Flask:
         out["is_lan"] = settings["host"] in ("0.0.0.0", "::")
         out["path"] = os.path.abspath(CONFIG_FILE)
         out["ephemeris_options"] = ephem.options()
+        out["ephemeris_span"] = list(horizons.default_span())
         return jsonify(out)
 
     @app.post("/api/sysconfig")
@@ -625,6 +644,106 @@ def create_app() -> Flask:
             if info:
                 out[tag] = info
         return jsonify(out)
+
+    @app.get("/api/horizons/search")
+    def horizons_search():
+        """检索天体 (SBDB 小天体 + NAIF 名/id)。"""
+        try:
+            return jsonify({"results": horizons.search(request.args.get("q", ""))})
+        except Exception as e:
+            return jsonify({"error": f"检索失败: {e}"}), 502
+
+    @app.post("/api/ephemeris/add")
+    def ephemeris_add():
+        """从 Horizons 抓取天体星历, 写 SPK(+旁挂) 到 ephemeris/ 并启用。"""
+        body = request.get_json(force=True, silent=True) or {}
+        naif, cmd = body.get("naif"), body.get("horizons")
+        label = str(body.get("name") or body.get("label") or "")
+        if naif is None or not cmd:
+            cand = horizons.resolve(str(body.get("query") or ""))
+            if not cand or cand.get("naif") is None or not cand.get("horizons"):
+                return jsonify({"error": "无法解析该天体 (未编号小天体暂不支持)"}), 400
+            naif, cmd, label = cand["naif"], cand["horizons"], cand["label"]
+        try:
+            naif = int(naif)
+        except Exception:
+            return jsonify({"error": "非法 NAIF id"}), 400
+        d0, d1 = horizons.default_span()
+        try:
+            t0 = float(body.get("t0", d0)); t1 = float(body.get("t1", d1))
+        except Exception:
+            return jsonify({"error": "非法时间跨度"}), 400
+        if t1 <= t0:
+            return jsonify({"error": "结束时间需晚于开始时间"}), 400
+        span = t1 - t0
+        step = float(body.get("step") or 0) or max(3.0, min(5.0, span / 6000.0))
+        prev = ephem.file_for_naif(naif)                 # 与已有 kernel 取并集 (不丢旧范围)
+        if prev and prev.get("coverage"):
+            t0, t1 = min(t0, float(prev["coverage"][0])), max(t1, float(prev["coverage"][1]))
+        try:
+            states, ets, meta = horizons.fetch(cmd, t0, t1, step)
+        except Exception as e:
+            return jsonify({"error": f"Horizons 抓取失败: {e}"}), 502
+        if len(ets) < 8:
+            return jsonify({"error": f"取到的采样点太少 ({len(ets)})"}), 502
+        short = _short_body_name(label) or f"NAIF {naif}"
+        slug = _slug(short, f"naif_{naif}")
+        path = EPHEMERIS_DIR / f"{slug}.bsp"
+        if path.exists() and _sidecar_naif(path) not in (None, naif):
+            slug, path = f"{slug}_{naif}", EPHEMERIS_DIR / f"{slug}_{naif}.bsp"
+        try:
+            horizons.write_spk(path, naif, slug.upper(), states, ets)
+        except Exception as e:
+            return jsonify({"error": f"写 SPK 失败: {e}"}), 500
+        radius = meta.get("radius")
+        mu = meta.get("mu_self")
+        cov = [(ets[0] + horizons.ET0) / 86400.0, (ets[-1] + horizons.ET0) / 86400.0]
+        side = {"naif": naif, "name": short, "mu_self": mu, "radius": radius,
+                "safe_radius": (1.05 * radius if radius else 0.0),
+                "coverage": cov, "horizons": cmd}
+        try:
+            (EPHEMERIS_DIR / f"{slug}.json").write_text(
+                json.dumps(side, ensure_ascii=False, indent=2), encoding="utf-8")
+        except OSError:
+            pass
+        ephem.reset_cache()
+        files = list(settings["ephemerides"])
+        if path.name not in files:
+            files.append(path.name)
+        settings.update({"ephemerides": files})
+        settings.save_file()
+        planets.set_active(files)
+        warn = None
+        if cov[0] > t0 + 0.5 or cov[1] < t1 - 0.5:
+            warn = "远端数据未完全覆盖请求跨度"
+        info = ephem.file_for_naif(naif) or {}
+        return jsonify({"file": path.name, "naif": naif, "name": short,
+                        "coverage": cov, "gm_m3s2": mu, "radius_m": radius,
+                        "bodies": [b["name"] for b in info.get("bodies", [])],
+                        "warning": warn})
+
+    @app.delete("/api/ephemeris/<file>")
+    def ephemeris_delete(file):
+        """删除一个 kernel (+旁挂) 并从启用列表移除。"""
+        if not file or "/" in file or "\\" in file or file in (".", ".."):
+            return jsonify({"error": "bad name"}), 400
+        f = EPHEMERIS_DIR / file
+        if not f.is_file():
+            return jsonify({"error": "not found"}), 404
+        try:
+            ephem.unload([file])                      # 释放该 kernel 的 SPICE 文件锁
+            ephem.reset_cache()
+            planets.set_active(settings["ephemerides"])
+            f.unlink()
+            (EPHEMERIS_DIR / (f.stem + ".json")).unlink(missing_ok=True)
+        except OSError as e:
+            return jsonify({"error": str(e)}), 500
+        files = [x for x in settings["ephemerides"] if x != file]
+        settings.update({"ephemerides": files})
+        settings.save_file()
+        ephem.reset_cache()
+        planets.set_active(files)
+        return jsonify({"deleted": file})
 
     @app.post("/api/shutdown")
     def shutdown():
@@ -748,3 +867,5 @@ app = create_app()
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=8765, threaded=True, debug=False)
+
+

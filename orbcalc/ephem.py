@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -37,10 +38,24 @@ def tag_from_name(name) -> str | None:
 
 
 # ---------------------------------------------------------------------------
+def _load_sidecar(path: Path):
+    """读取同名旁挂 ``<stem>.json`` (由 horizons.add 写入: naif/name/mu/radius/safe/coverage)。"""
+    try:
+        j = path.with_suffix(".json")
+        if j.is_file():
+            return json.loads(j.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return None
+
+
 def _scan_one(path: Path) -> dict:
     import pykep as pk
 
-    info = {"file": path.name, "size": path.stat().st_size, "bodies": [], "coverage": None}
+    side = _load_sidecar(path)
+    side_naif = int(side["naif"]) if side and side.get("naif") is not None else None
+    info = {"file": path.name, "size": path.stat().st_size, "bodies": [],
+            "coverage": None, "sidecar": side}
     try:
         naifs = [int(n) for n in pk.utils.inspect_spice_kernel(str(path))]
     except Exception:
@@ -50,9 +65,13 @@ def _scan_one(path: Path) -> dict:
         try:
             name = pk.utils.naifid2name(nid)
         except Exception:
-            name = "Not Found"
-        if not name or name == "Not Found":
-            name = EXTRA_NAMES.get(nid, f"NAIF {nid}")
+            name = None
+        if not name or name == "Not Found":        # pykep 字典未收录 -> 我们补充 / 旁挂名
+            name = EXTRA_NAMES.get(nid)
+        if not name and side_naif == nid and side.get("name"):
+            name = side["name"]
+        if not name:
+            name = f"NAIF {nid}"
         info["bodies"].append({"naif": nid, "name": name})
         try:
             e0, e1 = pk.utils.extract_coverage_window(str(path), nid, 0)
@@ -60,8 +79,27 @@ def _scan_one(path: Path) -> dict:
             cov = (a, b) if cov is None else (min(cov[0], a), max(cov[1], b))
         except Exception:
             pass
+    if side and side.get("coverage"):
+        cov = (float(side["coverage"][0]), float(side["coverage"][1]))
     info["coverage"] = cov
     return info
+
+
+def sidecar_for_naif(naif) -> dict | None:
+    """该 NAIF id 的旁挂参数 (若有)。"""
+    for k in scan():
+        side = k.get("sidecar")
+        if side and side.get("naif") is not None and int(side["naif"]) == int(naif):
+            return side
+    return None
+
+
+def file_for_naif(naif) -> dict | None:
+    """包含该 NAIF id 的 kernel 描述 (若有)。"""
+    for k in scan():
+        if any(int(b["naif"]) == int(naif) for b in k["bodies"]):
+            return k
+    return None
 
 
 def scan(force: bool = False) -> list:
@@ -123,3 +161,18 @@ def ensure_loaded(files=None) -> None:
 
 def loaded_paths() -> set[str]:
     return set(_loaded)
+
+
+def unload(files) -> None:
+    """从 SPICE 卸载指定 kernel (删除文件前释放 Windows 文件锁)。"""
+    import pykep as pk
+
+    d = dir_path()
+    for f in (files or []):
+        p = str((d / f).resolve())
+        if p in _loaded:
+            try:
+                pk.utils.unload_spice_kernels(p)
+            except Exception:
+                pass
+            _loaded.discard(p)
