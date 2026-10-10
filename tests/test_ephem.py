@@ -124,3 +124,23 @@ def test_massless_asteroid_waypoint(kernel_dir):
     assert f < 1e12, "零质量路点应可行"
     info = decode(x, udp.udp)
     assert len(info["tofs"]) == 2
+
+
+def test_local_refine_clamps_out_of_bounds_xnes():
+    """xnes 可能返回越界 champion (min_tof 把 TOF 压到盒下界时): local_refine 必须
+    clamp 到边界并返回与之一致的目标值, 否则下游会用越界 TOF (曾导致倒置盒崩溃)。"""
+    import numpy as np
+
+    from orbcalc.config import TrajConfig
+    from orbcalc.engines import local_refine
+    from orbcalc.udp import TOF_UDP
+
+    cfg = TrajConfig.from_dict({
+        "seq": ["EARTH", "MARS"], "tof_bounds": [[180.0, 900.0]],
+        "eras": [["2029-01-01", "2030-01-01"]], "objective": "min_tof"})
+    udp = TOF_UDP(cfg, t0=cfg.era_set.ranges[0])
+    lb, ub = (np.asarray(v, float) for v in udp.get_bounds())
+    f, x = local_refine(udp, list(lb), "xnes")
+    x = np.asarray(x, float)
+    assert (x >= lb).all() and (x <= ub).all()
+    assert f == udp.fitness(list(x))[0]
