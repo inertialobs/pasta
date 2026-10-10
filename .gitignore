@@ -17,3 +17,4 @@ PLAN.md
 
 presets/*.json
 !presets/traj_evvejs_cassini.json
+!presets/traj_eve_type3.json
