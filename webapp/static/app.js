@@ -1115,7 +1115,8 @@ $("sysHorizonsDownload").addEventListener("click", async () => {
     if (!r.ok) { msg.textContent = "失败: " + (j.error || r.statusText); return; }
     const t = await pollAddTask(j.task_id, (s) => {
       if (s.status === "running") {
-        msg.textContent = (s.mode === "write" ? "写入文件…" : "下载中 (JPL Horizons)…")
+        msg.textContent = (s.mode === "write" ? "写入文件…"
+          : "下载中… (可能需要等待数分钟, 可用「高级」缩小时间跨度)")
           + (s.total ? ` ${s.done}/${s.total}` : "");
       }
     });

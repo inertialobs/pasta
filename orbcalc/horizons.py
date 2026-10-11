@@ -210,12 +210,12 @@ def write_spk(path: Path, naif: int, segid: str, states, ets) -> None:
         sp.spkcls(handle)
 
 
+DEFAULT_YEARS = (1950, 2050)         # 默认取数范围 (年)
+
+
 def default_span():
-    """默认跨度 = 内置 de440s 的覆盖期 (mjd2000)。"""
-    try:
-        import pykep as pk
-        e0, e1 = pk.utils.extract_coverage_window(pk.udpla.de440s.kernel_file(), 399, 0)
-        return float(e0.mjd2000), float(e1.mjd2000)
-    except Exception:
-        from . import MJD2000_MIN, MJD2000_MAX
-        return float(MJD2000_MIN), float(MJD2000_MAX)
+    """默认取数跨度 (mjd2000): 1950-01-01 .. 2050-01-01。"""
+    from datetime import date
+    base = date(2000, 1, 1)
+    y0, y1 = DEFAULT_YEARS
+    return float((date(y0, 1, 1) - base).days), float((date(y1, 1, 1) - base).days)
