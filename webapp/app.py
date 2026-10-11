@@ -21,6 +21,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request, send_from_directory
@@ -497,6 +498,78 @@ def _sidecar_naif(p: Path):
         return None
 
 
+# 外部星历下载任务 (后台线程 + 进度轮询; 下载可能持续数十秒到数分钟)
+_EPH_TASKS: dict = {}
+_EPH_LOCK = threading.Lock()
+
+
+def _eph_update(tid, **kw):
+    with _EPH_LOCK:
+        t = _EPH_TASKS.get(tid)
+        if t is not None:
+            t.update(kw)
+
+
+def _ephemeris_add_worker(tid, body):
+    """后台: 解析 -> Horizons 取数(带进度) -> 写 SPK+旁挂 -> 启用。"""
+    try:
+        naif, cmd = body.get("naif"), body.get("horizons")
+        label = str(body.get("name") or body.get("label") or "")
+        if naif is None or not cmd:
+            cand = horizons.resolve(str(body.get("query") or ""))
+            if not cand or cand.get("naif") is None or not cand.get("horizons"):
+                return _eph_update(tid, status="error", error="无法解析该天体 (未编号小天体暂不支持)")
+            naif, cmd, label = cand["naif"], cand["horizons"], cand["label"]
+        naif = int(naif)
+        d0, d1 = horizons.default_span()
+        t0 = float(body.get("t0", d0)); t1 = float(body.get("t1", d1))
+        if t1 <= t0:
+            return _eph_update(tid, status="error", error="结束时间需晚于开始时间")
+        span = t1 - t0
+        step = float(body.get("step") or 0) or max(3.0, min(5.0, span / 6000.0))
+        prev = ephem.file_for_naif(naif)             # 与已有 kernel 取并集 (不丢旧范围)
+        if prev and prev.get("coverage"):
+            t0, t1 = min(t0, float(prev["coverage"][0])), max(t1, float(prev["coverage"][1]))
+        _eph_update(tid, mode="fetch")
+        states, ets, meta = horizons.fetch(cmd, t0, t1, step,
+                                           progress=lambda d, n: _eph_update(tid, done=d, total=n))
+        if len(ets) < 8:
+            return _eph_update(tid, status="error", error=f"取到的采样点太少 ({len(ets)})")
+        short = _short_body_name(label) or f"NAIF {naif}"
+        slug = _slug(short, f"naif_{naif}")
+        path = EPHEMERIS_DIR / f"{slug}.bsp"
+        if path.exists() and _sidecar_naif(path) not in (None, naif):
+            slug, path = f"{slug}_{naif}", EPHEMERIS_DIR / f"{slug}_{naif}.bsp"
+        _eph_update(tid, mode="write")
+        horizons.write_spk(path, naif, slug.upper(), states, ets)
+        radius = meta.get("radius")
+        mu = meta.get("mu_self")
+        cov = [(ets[0] + horizons.ET0) / 86400.0, (ets[-1] + horizons.ET0) / 86400.0]
+        side = {"naif": naif, "name": short, "mu_self": mu, "radius": radius,
+                "safe_radius": (1.05 * radius if radius else 0.0),
+                "coverage": cov, "horizons": cmd}
+        try:
+            (EPHEMERIS_DIR / f"{slug}.json").write_text(
+                json.dumps(side, ensure_ascii=False, indent=2), encoding="utf-8")
+        except OSError:
+            pass
+        ephem.reset_cache()
+        files = list(settings["ephemerides"])
+        if path.name not in files:
+            files.append(path.name)
+        settings.update({"ephemerides": files})
+        settings.save_file()
+        planets.set_active(files)
+        warn = "远端数据未完全覆盖请求跨度" if (cov[0] > t0 + 0.5 or cov[1] < t1 - 0.5) else None
+        info = ephem.file_for_naif(naif) or {}
+        _eph_update(tid, status="done", result={
+            "file": path.name, "naif": naif, "name": short, "coverage": cov,
+            "gm_m3s2": mu, "radius_m": radius,
+            "bodies": [b["name"] for b in info.get("bodies", [])], "warning": warn})
+    except Exception as e:
+        _eph_update(tid, status="error", error=f"{type(e).__name__}: {e}")
+
+
 def _load_preset_dir(dirpath: Path, traj: dict) -> None:
     """扫描目录里的任务预设 JSON 并就地并入 traj.
 
@@ -655,72 +728,23 @@ def create_app() -> Flask:
 
     @app.post("/api/ephemeris/add")
     def ephemeris_add():
-        """从 Horizons 抓取天体星历, 写 SPK(+旁挂) 到 ephemeris/ 并启用。"""
+        """启动后台下载任务 (Horizons 抓取可能较久), 返回 task_id 供轮询进度。"""
         body = request.get_json(force=True, silent=True) or {}
-        naif, cmd = body.get("naif"), body.get("horizons")
-        label = str(body.get("name") or body.get("label") or "")
-        if naif is None or not cmd:
-            cand = horizons.resolve(str(body.get("query") or ""))
-            if not cand or cand.get("naif") is None or not cand.get("horizons"):
-                return jsonify({"error": "无法解析该天体 (未编号小天体暂不支持)"}), 400
-            naif, cmd, label = cand["naif"], cand["horizons"], cand["label"]
-        try:
-            naif = int(naif)
-        except Exception:
-            return jsonify({"error": "非法 NAIF id"}), 400
-        d0, d1 = horizons.default_span()
-        try:
-            t0 = float(body.get("t0", d0)); t1 = float(body.get("t1", d1))
-        except Exception:
-            return jsonify({"error": "非法时间跨度"}), 400
-        if t1 <= t0:
-            return jsonify({"error": "结束时间需晚于开始时间"}), 400
-        span = t1 - t0
-        step = float(body.get("step") or 0) or max(3.0, min(5.0, span / 6000.0))
-        prev = ephem.file_for_naif(naif)                 # 与已有 kernel 取并集 (不丢旧范围)
-        if prev and prev.get("coverage"):
-            t0, t1 = min(t0, float(prev["coverage"][0])), max(t1, float(prev["coverage"][1]))
-        try:
-            states, ets, meta = horizons.fetch(cmd, t0, t1, step)
-        except Exception as e:
-            return jsonify({"error": f"Horizons 抓取失败: {e}"}), 502
-        if len(ets) < 8:
-            return jsonify({"error": f"取到的采样点太少 ({len(ets)})"}), 502
-        short = _short_body_name(label) or f"NAIF {naif}"
-        slug = _slug(short, f"naif_{naif}")
-        path = EPHEMERIS_DIR / f"{slug}.bsp"
-        if path.exists() and _sidecar_naif(path) not in (None, naif):
-            slug, path = f"{slug}_{naif}", EPHEMERIS_DIR / f"{slug}_{naif}.bsp"
-        try:
-            horizons.write_spk(path, naif, slug.upper(), states, ets)
-        except Exception as e:
-            return jsonify({"error": f"写 SPK 失败: {e}"}), 500
-        radius = meta.get("radius")
-        mu = meta.get("mu_self")
-        cov = [(ets[0] + horizons.ET0) / 86400.0, (ets[-1] + horizons.ET0) / 86400.0]
-        side = {"naif": naif, "name": short, "mu_self": mu, "radius": radius,
-                "safe_radius": (1.05 * radius if radius else 0.0),
-                "coverage": cov, "horizons": cmd}
-        try:
-            (EPHEMERIS_DIR / f"{slug}.json").write_text(
-                json.dumps(side, ensure_ascii=False, indent=2), encoding="utf-8")
-        except OSError:
-            pass
-        ephem.reset_cache()
-        files = list(settings["ephemerides"])
-        if path.name not in files:
-            files.append(path.name)
-        settings.update({"ephemerides": files})
-        settings.save_file()
-        planets.set_active(files)
-        warn = None
-        if cov[0] > t0 + 0.5 or cov[1] < t1 - 0.5:
-            warn = "远端数据未完全覆盖请求跨度"
-        info = ephem.file_for_naif(naif) or {}
-        return jsonify({"file": path.name, "naif": naif, "name": short,
-                        "coverage": cov, "gm_m3s2": mu, "radius_m": radius,
-                        "bodies": [b["name"] for b in info.get("bodies", [])],
-                        "warning": warn})
+        tid = uuid.uuid4().hex
+        with _EPH_LOCK:
+            _EPH_TASKS[tid] = {"status": "running", "mode": "start", "done": 0, "total": 0}
+        threading.Thread(target=_ephemeris_add_worker, args=(tid, body), daemon=True).start()
+        return jsonify({"task_id": tid}), 202
+
+    @app.get("/api/ephemeris/task/<tid>")
+    def ephemeris_task(tid):
+        with _EPH_LOCK:
+            t = _EPH_TASKS.get(tid)
+            if t is not None and t.get("status") in ("done", "error"):
+                _EPH_TASKS.pop(tid, None)     # 终态取走后清理
+        if t is None:
+            return jsonify({"error": "not found"}), 404
+        return jsonify(t)
 
     @app.delete("/api/ephemeris/<file>")
     def ephemeris_delete(file):

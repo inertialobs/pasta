@@ -354,8 +354,11 @@ def test_add_body_search_download_and_delete(page, live_server):
                  "orbit_class": "Apollo", "horizons": "162173;"}]})
         if url == "/api/ephemeris/add" and method == "POST":
             state["ephemerides"].append("ryugu.bsp")
-            return _json_route(route, {"file": "ryugu.bsp", "naif": 2162173, "name": "Ryugu",
-                                       "radius_m": 448.0, "coverage": [4000, 5000], "warning": None})
+            return _json_route(route, {"task_id": "t1"})
+        if url == "/api/ephemeris/task/t1":
+            return _json_route(route, {"status": "done", "result": {
+                "file": "ryugu.bsp", "naif": 2162173, "name": "Ryugu",
+                "radius_m": 448.0, "coverage": [4000, 5000], "warning": None}})
         if url.startswith("/api/ephemeris/") and method == "DELETE":
             fn = url.rsplit("/", 1)[1]
             state["ephemerides"] = [f for f in state["ephemerides"] if f != fn]

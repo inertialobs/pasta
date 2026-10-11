@@ -148,9 +148,9 @@ def _get_vectors(cmd: str, a: float, b: float, step_d: float):
     return _get(f"{HORIZONS_API}?{q}")
 
 
-def fetch(cmd: str, t0_mjd: float, t1_mjd: float, step_d: float):
+def fetch(cmd: str, t0_mjd: float, t1_mjd: float, step_d: float, progress=None):
     """-> (states[N,6] km & km/s, ets[N], meta)。长跨度自动分段合并, 去重边界;
-    meta 来自第一段响应头 (name/mu_self/radius)。"""
+    meta 来自第一段响应头 (name/mu_self/radius); progress(done, total) 每段回调。"""
     if not _SAFE_CMD.match(str(cmd)):
         raise ValueError(f"非法 Horizons COMMAND: {cmd!r}")
     step_d = max(float(step_d), 0.1)
@@ -170,6 +170,11 @@ def fetch(cmd: str, t0_mjd: float, t1_mjd: float, step_d: float):
             s, e = s[1:], e[1:]
         states += list(s)
         ets += e
+        if progress is not None:
+            try:
+                progress(i + 1, nch)
+            except Exception:
+                pass
     return np.array(states), ets, meta
 
 

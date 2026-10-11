@@ -1086,12 +1086,22 @@ $("sysHorizonsSearch").addEventListener("click", async () => {
     renderHorizonsResults(r.results || []);
   } catch (e) { $("sysHorizonsResults").innerHTML = `<div class="hint">搜索失败: ${escapeHtml(e.message)}</div>`; }
 });
+async function pollAddTask(tid, onTick) {
+  for (;;) {
+    const t = await jfetch("/api/ephemeris/task/" + encodeURIComponent(tid));
+    if (onTick) onTick(t);
+    if (t.status === "done" || t.status === "error") return t;
+    await new Promise(r => setTimeout(r, 1000));
+  }
+}
 $("sysHorizonsDownload").addEventListener("click", async () => {
   const sel = document.querySelector('#sysHorizonsResults input[name="hz"]:checked');
   if (!sel) return;
   const cand = JSON.parse(sel.closest(".eph-result").dataset.json);
   const msg = $("sysHorizonsMsg");
-  msg.textContent = "下载中… (JPL Horizons)";
+  const btn = $("sysHorizonsDownload");
+  msg.textContent = "提交中…";
+  btn.disabled = true;
   try {
     const r = await fetch("/api/ephemeris/add", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -1103,14 +1113,23 @@ $("sysHorizonsDownload").addEventListener("click", async () => {
     });
     const j = await r.json();
     if (!r.ok) { msg.textContent = "失败: " + (j.error || r.statusText); return; }
+    const t = await pollAddTask(j.task_id, (s) => {
+      if (s.status === "running") {
+        msg.textContent = (s.mode === "write" ? "写入文件…" : "下载中 (JPL Horizons)…")
+          + (s.total ? ` ${s.done}/${s.total}` : "");
+      }
+    });
+    if (t.status === "error") { msg.textContent = "失败: " + t.error; return; }
+    const res = t.result || {};
     const chosen = selectedEphemerides();
-    if (!chosen.includes(j.file)) chosen.push(j.file);
+    if (res.file && !chosen.includes(res.file)) chosen.push(res.file);
     const s = await jfetch("/api/sysconfig");
     renderEphemerisList(s.ephemeris_options || [], chosen);
     await loadBodies(); refreshPlanetOptions();
-    msg.textContent = `已添加 ${j.file}` + (j.radius_m ? ` (R=${Math.round(j.radius_m)} m)` : "")
-      + (j.warning ? " ⚠ " + j.warning : "");
+    msg.textContent = `已添加 ${res.file}` + (res.radius_m ? ` (R=${Math.round(res.radius_m)} m)` : "")
+      + (res.warning ? " ⚠ " + res.warning : "");
   } catch (e) { msg.textContent = "失败: " + e.message; }
+  finally { btn.disabled = false; }
 });
 $("sysClose").addEventListener("click", closeModal);
 $("aboutClose").addEventListener("click", closeModal);

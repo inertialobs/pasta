@@ -97,10 +97,12 @@ def eph_client(monkeypatch, tmp_path):
     monkeypatch.setattr(ephem, "dir_path", lambda: tmp_path)
     monkeypatch.setattr(web, "settings", _StubSettings(ephemerides=[]))
 
-    def fake_fetch(cmd, t0, t1, step):
+    def fake_fetch(cmd, t0, t1, step, progress=None):
         n = 20
         ets = [(float(t0) + i) * 86400.0 - horizons.ET0 for i in range(n)]
         states = np.tile([1.0e8, 2.0e7, 0.0, -5.0, 29.0, 1.0], (n, 1))
+        if progress:
+            progress(1, 1)
         return states, ets, {"name": "162173 Ryugu", "mu_self": 3.0e9, "radius": 448.0}
 
     monkeypatch.setattr(horizons, "fetch", fake_fetch)
@@ -120,14 +122,23 @@ def test_search_endpoint(eph_client, monkeypatch):
 
 
 def test_add_and_delete_ephemeris(eph_client):
+    import time
+
     from orbcalc import planets
 
     client, tmp = eph_client
     r = client.post("/api/ephemeris/add", json={
         "naif": 2162173, "horizons": "162173;", "name": "162173 Ryugu",
         "t0": 4000.0, "t1": 4100.0, "step": 5.0})
-    j = r.get_json()
-    assert r.status_code == 200, j
+    assert r.status_code == 202, r.get_json()
+    tid = r.get_json()["task_id"]
+    for _ in range(100):
+        t = client.get(f"/api/ephemeris/task/{tid}").get_json()
+        if t.get("status") in ("done", "error"):
+            break
+        time.sleep(0.05)
+    assert t["status"] == "done", t
+    j = t["result"]
     assert (tmp / j["file"]).is_file()
     assert (tmp / (j["file"][:-4] + ".json")).is_file()
     assert "RYUGU" in planets.known_tags()
