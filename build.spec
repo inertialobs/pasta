@@ -63,12 +63,17 @@ _here = SPECPATH if 'SPECPATH' in globals() else os.getcwd()
 datas += [
     (os.path.join(_here, 'webapp/templates'),     'webapp/templates'),
     (os.path.join(_here, 'webapp/static'),        'webapp/static'),
-    (os.path.join(_here, 'presets'),              'presets'),
     (os.path.join(_here, 'licenses'),             'licenses'),
     (os.path.join(_here, 'assets', 'logo.png'),  'assets'),
     (os.path.join(_here, 'LICENSE'),              '.'),
     (os.path.join(_here, 'ThirdPartyNotice.md'),  '.'),
 ]
+# 预设: 只打包仓库跟踪的两个 (与 .gitignore 白名单一致), 不打包用户本地/gitignore 的预设;
+# 若新增随包预设, 需同步更新此处与 .gitignore。
+for _preset in ('traj_evvejs_cassini.json', 'traj_eve_type3.json'):
+    _pp = os.path.join(_here, 'presets', _preset)
+    if os.path.exists(_pp):
+        datas.append((_pp, 'presets'))
 # 运行时目录: 冻结版 EXE(contents_directory='.') 使所有依赖/资源与 exe 同级;
 # main.py 启动时 chdir 到 exe 目录 -> 资源 (webapp/presets) 与用户数据同根且可写,
 # runs/、用户预设、pasta.settings.json 均写在 exe 旁。
