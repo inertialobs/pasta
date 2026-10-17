@@ -49,6 +49,14 @@ BODY_PARAMS = {
 # 未列入表的天体默认物理参数 (小行星/彗星: 质量与半径按 0 处理)
 DEFAULT_BODY = {"mu_self": 0.0, "radius": 0.0, "safe_radius": 0.0}
 
+# 无卫星行星: 系统质心 NAIF == 本体中心 NAIF (位置相同), 视为同一内置天体,
+# 使其继承内置 μ/半径 且不在下拉里出现 *_BARYCENTER 冗余项。
+# (有卫星的行星质心≠本体, 不在此列, 保持各自独立。)
+BARYCENTER_ALIASES = {
+    1: "MERCURY",   # 1 = MERCURY BARYCENTER  == 199 = MERCURY
+    2: "VENUS",     # 2 = VENUS BARYCENTER    == 299 = VENUS
+}
+
 DEFAULT_SAFE_RADIUS = {tag: spec["safe_radius"] for tag, spec in BODY_PARAMS.items()}
 
 # 简名 (报告/绘图用) — 同一 TAG 多次出现时自动加序号 (Venus1, Venus2, ...)
@@ -65,6 +73,7 @@ def set_active(files):
 def _kernel_bodies():
     """已启用 kernel 的天体: tag -> {naif, name, file}; 与内置按 NAIF 去重, 先启用者优先。"""
     builtin_by_naif = {s["naif"]: t for t, s in BODY_PARAMS.items()}
+    builtin_by_naif.update(BARYCENTER_ALIASES)     # 无卫星行星: 质心 -> 内置本体
     out = {}
     for k in ephem.active_kernels():
         for b in k["bodies"]:
@@ -114,8 +123,12 @@ def body_info(tag):
     spec, kfile = _resolve(tag)
     if spec is None:
         return None
+    note = ""
+    if kfile is not None:
+        no_phys = float(spec.get("mu_self") or 0.0) <= 0 and float(spec.get("radius") or 0.0) <= 0
+        note = "外部星历 (kernel, 无 μ/半径: 仅定时路点)" if no_phys else "外部星历 (kernel)"
     return {"label": spec.get("name", tag).capitalize(),
-            "note": "" if kfile is None else "外部星历 (kernel)",
+            "note": note,
             "builtin": kfile is None,
             "kernel": kfile}
 

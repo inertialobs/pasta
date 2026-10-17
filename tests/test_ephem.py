@@ -144,3 +144,18 @@ def test_local_refine_clamps_out_of_bounds_xnes():
     x = np.asarray(x, float)
     assert (x >= lb).all() and (x <= ub).all()
     assert f == udp.fitness(list(x))[0]
+
+
+def test_moonless_barycenter_aliases_to_builtin(kernel_dir):
+    """无卫星行星的质心 NAIF (1/2) 视为内置本体: 不产生 *_BARYCENTER 冗余项,
+    VENUS 仍走内置 (继承 μ/半径)。kernel 无旁挂天体则标注"仅定时路点"。"""
+    from orbcalc import planets
+
+    planets.set_active(["de440s.bsp"])
+    kb = planets._kernel_bodies()
+    assert "VENUS_BARYCENTER" not in kb and "MERCURY_BARYCENTER" not in kb
+    assert kb["VENUS"]["naif"] == 2                 # 质心被映射到内置 TAG
+    assert planets.body_info("VENUS")["builtin"] is True
+    assert planets.body_info("VENUS_BARYCENTER") is None
+    assert planets.body_info("MOON")["builtin"] is False
+    assert "无 μ/半径" in planets.body_info("MOON")["note"]
