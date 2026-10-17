@@ -159,3 +159,69 @@ def test_moonless_barycenter_aliases_to_builtin(kernel_dir):
     assert planets.body_info("VENUS_BARYCENTER") is None
     assert planets.body_info("MOON")["builtin"] is False
     assert "无 μ/半径" in planets.body_info("MOON")["note"]
+
+
+def test_sidecar_bodies_old_and_multi():
+    from orbcalc.ephem import _sidecar_bodies
+
+    old = {"naif": 2162173, "name": "Ryugu", "mu_self": 3e9}
+    assert _sidecar_bodies(old) == {2162173: old}
+
+    multi = {"2000001": {"naif": 2000001, "name": "Ceres", "mu_self": 6.2e10},
+             "2000004": {"naif": 2000004, "name": "Vesta"}}
+    got = _sidecar_bodies(multi)
+    assert got[2000001]["name"] == "Ceres" and got[2000004]["name"] == "Vesta"
+
+    wrapped = {"bodies": multi}
+    assert _sidecar_bodies(wrapped)[2000001]["name"] == "Ceres"
+
+
+def _no_cover(*_a):
+    raise RuntimeError("no coverage")
+
+
+def test_scan_one_uses_multi_body_sidecar(tmp_path, monkeypatch):
+    import pykep as pk
+
+    from orbcalc import ephem
+
+    p = tmp_path / "sb441-n16.bsp"
+    p.write_bytes(b"")
+    (tmp_path / "sb441-n16.json").write_text(
+        '{"2000001": {"naif": 2000001, "name": "Ceres", "mu_self": 6.2e10}}',
+        encoding="utf-8")
+    monkeypatch.setattr(pk.utils, "inspect_spice_kernel", lambda _p: [2000001])
+    monkeypatch.setattr(pk.utils, "extract_coverage_window", _no_cover)
+
+    info = ephem._scan_one(p)
+    assert info["bodies"][0]["name"] == "Ceres"
+    assert info["bodies"][0]["mu_self"] == 6.2e10
+    ephem._loaded.clear()
+
+
+def test_scan_one_old_sidecar_unchanged(tmp_path, monkeypatch):
+    import pykep as pk
+
+    from orbcalc import ephem
+
+    p = tmp_path / "ryugu.bsp"
+    p.write_bytes(b"")
+    (tmp_path / "ryugu.json").write_text(
+        '{"naif": 2162173, "name": "Ryugu", "mu_self": 3e9, "radius": 448.0, '
+        '"safe_radius": 470.4}', encoding="utf-8")
+    monkeypatch.setattr(pk.utils, "inspect_spice_kernel", lambda _p: [2162173])
+    monkeypatch.setattr(pk.utils, "extract_coverage_window", _no_cover)
+
+    body = ephem._scan_one(p)["bodies"][0]
+    assert body == {"naif": 2162173, "name": "Ryugu", "mu_self": 3e9,
+                    "radius": 448.0, "safe_radius": 470.4}
+    ephem._loaded.clear()
+
+
+def test_display_keeps_numbered_names():
+    from orbcalc.planets import _display
+
+    assert _display("52 Europa") == "52 Europa"
+    assert _display("2002 MS4") == "2002 MS4"
+    assert _display("mercury") == "Mercury"
+    assert _display("EARTH") == "Earth"

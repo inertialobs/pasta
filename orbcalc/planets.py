@@ -63,6 +63,20 @@ DEFAULT_SAFE_RADIUS = {tag: spec["safe_radius"] for tag, spec in BODY_PARAMS.ite
 TAG_SHORT = {tag: spec["name"].capitalize() for tag, spec in BODY_PARAMS.items()}
 
 
+def _num(value, default=0.0) -> float:
+    """可空值 -> float; None/非法值回退 default。"""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _display(name, tag="") -> str:
+    """显示名: 带编号的名字保持原样 (如 "52 Europa"), 纯小写内置名首字母大写。"""
+    s = str(name or tag)
+    return s if s[:1].isdigit() else s.capitalize()
+
+
 # ---------------------------------------------------------------------------
 def set_active(files):
     """设置启用的外部星历 (转发 ephem 并清空行星缓存)。"""
@@ -79,7 +93,11 @@ def _kernel_bodies():
         for b in k["bodies"]:
             tag = (builtin_by_naif.get(b["naif"]) or ephem.tag_from_name(b["name"])
                    or f"NAIF_{b['naif']}")
-            out.setdefault(tag, {"naif": b["naif"], "name": b["name"], "file": k["file"]})
+            item = {"naif": b["naif"], "name": b["name"], "file": k["file"]}
+            for key in ("mu_self", "radius", "safe_radius"):   # 旁挂元数据 (可选)
+                if b.get(key) is not None:
+                    item[key] = b[key]
+            out.setdefault(tag, item)
     return out
 
 
@@ -98,14 +116,13 @@ def _resolve(tag):
         spec = dict(base)
     else:
         side = ephem.sidecar_for_naif(kb["naif"])
-        if side is not None:                   # 抓取时自动填的 μ/半径 (Horizons 头)
-            spec = {"name": side.get("name") or kb["name"],
-                    "mu_self": float(side.get("mu_self") or 0.0),
-                    "radius": float(side.get("radius") or 0.0),
-                    "safe_radius": float(side.get("safe_radius") or 0.0)}
-        else:                                  # 无旁挂: 默认 μ=0/半径=0 (定时路点)
-            spec = {"name": kb["name"], "mu_self": DEFAULT_BODY["mu_self"],
-                    "radius": DEFAULT_BODY["radius"], "safe_radius": DEFAULT_BODY["safe_radius"]}
+        mu, radius, safe = kb.get("mu_self"), kb.get("radius"), kb.get("safe_radius")
+        if mu is None and radius is None and side is not None:   # 旧单体旁挂
+            mu, radius, safe = side.get("mu_self"), side.get("radius"), side.get("safe_radius")
+        spec = {"name": kb.get("name") or (side.get("name") if side else None) or tag,
+                "mu_self": _num(mu, DEFAULT_BODY["mu_self"]),
+                "radius": _num(radius, DEFAULT_BODY["radius"]),
+                "safe_radius": _num(safe, DEFAULT_BODY["safe_radius"])}
     spec["naif"] = kb["naif"]
     spec["spice"] = kb["naif"]                 # 用 NAIF id 直接定位 (名可能不规范)
     return spec, kb["file"]
@@ -127,7 +144,7 @@ def body_info(tag):
     if kfile is not None:
         no_phys = float(spec.get("mu_self") or 0.0) <= 0 and float(spec.get("radius") or 0.0) <= 0
         note = "外部星历 (kernel, 无 μ/半径: 仅定时路点)" if no_phys else "外部星历 (kernel)"
-    return {"label": spec.get("name", tag).capitalize(),
+    return {"label": _display(spec.get("name"), tag),
             "note": note,
             "builtin": kfile is None,
             "kernel": kfile}
@@ -278,7 +295,7 @@ def build_seq(cfg):
         if spec is None:
             raise KeyError(f"未知行星 TAG: {tag}")
         seq.append(make_planet(spec["spice"], spec, tag_safe, kernel=kfile))
-        short = TAG_SHORT.get(tag, spec.get("name", tag).capitalize())
+        short = TAG_SHORT.get(tag, _display(spec.get("name"), tag))
         names.append(f"{short}{counts[tag]}" if counts[tag] > 1 else short)
     _cache[key] = (seq, names)
     return _cache[key]

@@ -39,7 +39,12 @@ def tag_from_name(name) -> str | None:
 
 # ---------------------------------------------------------------------------
 def _load_sidecar(path: Path):
-    """读取同名旁挂 ``<stem>.json`` (由 horizons.add 写入: naif/name/mu/radius/safe/coverage)。"""
+    """读取同名旁挂 ``<stem>.json``。
+
+    兼容两种结构:
+    - 旧单体: ``{naif, name, mu_self, radius, safe_radius, coverage, horizons}``
+    - 多体表: ``{"<naif>": {同上}, ...}`` 或 ``{"bodies": {"<naif>": {同上}, ...}}``
+    """
     try:
         j = path.with_suffix(".json")
         if j.is_file():
@@ -49,11 +54,37 @@ def _load_sidecar(path: Path):
     return None
 
 
+def _sidecar_bodies(side) -> dict[int, dict]:
+    """旁挂 -> ``{naif: 元数据}``; 旧单体与多体表都归一化为同一结构。"""
+    if not isinstance(side, dict):
+        return {}
+    out: dict[int, dict] = {}
+    if side.get("naif") is not None:                 # 旧单体旁挂
+        try:
+            nid = int(side["naif"])
+        except (TypeError, ValueError):
+            nid = None
+        if nid is not None:
+            out[nid] = side
+    raw = side.get("bodies")
+    if not isinstance(raw, dict):
+        raw = side
+    for key, val in raw.items():
+        if not isinstance(val, dict):
+            continue
+        try:
+            nid = int(val.get("naif", key))
+        except (TypeError, ValueError):
+            continue
+        out[nid] = {**val, "naif": nid}
+    return out
+
+
 def _scan_one(path: Path) -> dict:
     import pykep as pk
 
     side = _load_sidecar(path)
-    side_naif = int(side["naif"]) if side and side.get("naif") is not None else None
+    metas = _sidecar_bodies(side)
     info = {"file": path.name, "size": path.stat().st_size, "bodies": [],
             "coverage": None, "sidecar": side}
     try:
@@ -62,24 +93,35 @@ def _scan_one(path: Path) -> dict:
         naifs = []
     cov = None
     for nid in naifs:
-        try:
-            name = pk.utils.naifid2name(nid)
-        except Exception:
-            name = None
-        if not name or name == "Not Found":        # pykep 字典未收录 -> 我们补充 / 旁挂名
+        meta = metas.get(nid) or {}
+        name = meta.get("name")
+        if not name:
+            try:
+                name = pk.utils.naifid2name(nid)
+            except Exception:
+                name = None
+        if not name or name == "Not Found":        # pykep 字典未收录 -> 我们补充
             name = EXTRA_NAMES.get(nid)
-        if not name and side_naif == nid and side.get("name"):
-            name = side["name"]
         if not name:
             name = f"NAIF {nid}"
-        info["bodies"].append({"naif": nid, "name": name})
+        body = {"naif": nid, "name": name}
+        for key in ("mu_self", "radius", "safe_radius"):
+            if meta.get(key) is not None:
+                try:
+                    body[key] = float(meta[key])
+                except (TypeError, ValueError):
+                    pass
+        info["bodies"].append(body)
         try:
             e0, e1 = pk.utils.extract_coverage_window(str(path), nid, 0)
             a, b = float(e0.mjd2000), float(e1.mjd2000)
             cov = (a, b) if cov is None else (min(cov[0], a), max(cov[1], b))
         except Exception:
-            pass
-    if side and side.get("coverage"):
+            c = meta.get("coverage")
+            if isinstance(c, (list, tuple)) and len(c) == 2:
+                a, b = float(c[0]), float(c[1])
+                cov = (a, b) if cov is None else (min(cov[0], a), max(cov[1], b))
+    if side and isinstance(side.get("coverage"), (list, tuple)) and len(side["coverage"]) == 2:
         cov = (float(side["coverage"][0]), float(side["coverage"][1]))
     info["coverage"] = cov
     return info
