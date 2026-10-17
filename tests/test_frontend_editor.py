@@ -105,7 +105,9 @@ def test_add_move_and_delete_body_keeps_sequence_and_tof_legs_aligned(editor_pag
 
     last_index = len(expected) - 1
     last = page.locator("#seqNodes .node-row").nth(last_index)
-    last.locator('select[data-k="tag"]').select_option("MARS")
+    tag_input = last.locator('input[data-k="tag"]')
+    tag_input.fill("MARS")
+    tag_input.press("Enter")
     expected[last_index] = "MARS"
     assert read_config(page)["seq"] == expected
     assert_roles_and_leg_labels(page, expected)
@@ -304,12 +306,25 @@ def test_kernel_bodies_and_ephemeris_settings(page, live_server):
 
     page.route("**/api/**", handler)
     page.goto(live_server)
-    page.wait_for_function(
-        "() => [...document.querySelectorAll(\"#seqNodes select[data-k='tag'] option\")]"
-        ".some(o => o.value === 'CERES')")
-    values = page.locator("#seqNodes .node-row").first.locator(
-        "select[data-k='tag'] option").evaluate_all("els => els.map(e => e.value)")
-    assert "CERES" in values
+    tag_input = page.locator("#seqNodes .node-row").first.locator('input[data-k="tag"]')
+    tag_input.focus()
+    page.wait_for_selector(".node-menu:not(.hidden) .opt[data-tag]")
+    tags = page.locator(".node-menu:not(.hidden) .opt[data-tag]").evaluate_all(
+        "els => els.map(e => e.dataset.tag)")
+    assert "CERES" in tags
+
+    tag_input.fill("CERES")
+    tag_input.press("Enter")
+    assert tag_input.get_attribute("data-tag") == "CERES"
+
+    tag_input.fill("Ven")
+    page.locator(".node-menu:not(.hidden) .opt[data-tag='VENUS']").click()
+    assert tag_input.get_attribute("data-tag") == "VENUS"
+
+    tag_input.fill("Mars")
+    tag_input.press("ArrowDown")
+    tag_input.press("Enter")
+    assert tag_input.get_attribute("data-tag") == "MARS"
 
     page.locator("#sysOpen").click()
     page.wait_for_selector("#sysEphemList .ephem-item")

@@ -142,7 +142,12 @@ function makeNodeRow(tag) {
   const row = document.createElement("div");
   row.className = "node-row flyby";
   row.innerHTML = `
-    <select data-k="tag">${planetOptions(tag)}</select>
+    <span class="node-pick">
+      <input class="node-tag" data-k="tag" data-tag="${escapeHtml(tag)}"
+             value="${escapeHtml(bodyLabel(tag))}" autocomplete="off"
+             spellcheck="false" title="输入星体名检索">
+      <div class="node-menu hidden"></div>
+    </span>
     <span class="node-settings" data-k="settings">
       <span class="node-safe">${bodyNote(tag)}</span>
     </span>
@@ -166,6 +171,7 @@ function buildSeqEditor(seq, tofBounds, lambertTypes) {
     wrap.appendChild(row);
   });
   refreshSeqRoles();
+  refreshPlanetOptions();      // 建立/刷新检索列表
 }
 
 /* 每腿转移类型 (按 TOF 表逐行读取, data-leg 即腿序) */
@@ -195,30 +201,97 @@ function bodyNote(tag) {
 async function loadBodies() {
   try { state.bodies = await jfetch("/api/bodies"); } catch (e) { state.bodies = null; }
 }
-/* 启用星历变化后, 刷新各节点行星下拉的选项 (保留当前值) */
+/* 启用星历变化后, 刷新各节点显示名 (保留当前 TAG) */
 function refreshPlanetOptions() {
-  document.querySelectorAll('#seqNodes .node-row select[data-k="tag"]').forEach(sel => {
-    const cur = sel.value;
-    sel.innerHTML = planetOptions(cur);
+  document.querySelectorAll('#seqNodes .node-row [data-k="tag"]').forEach(inp => {
+    if (inp.dataset.tag) inp.value = bodyLabel(inp.dataset.tag);
+    closeMenu(inp);
   });
 }
 
-function planetOptions(sel) {
-  return bodyTags().map(tag =>
-    `<option value="${tag}" ${tag === sel ? "selected" : ""}>${escapeHtml(bodyLabel(tag))}</option>`).join("");
+function menuFor(inp) {
+  const pick = inp.closest(".node-pick");
+  return pick ? pick.querySelector(".node-menu") : null;
+}
+function menuOpts(menu) {
+  return menu ? [...menu.querySelectorAll(".opt[data-tag]")] : [];
+}
+function closeMenu(inp) {
+  const menu = menuFor(inp);
+  if (menu) menu.classList.add("hidden");
+}
+function activeIndex(menu) {
+  return menuOpts(menu).findIndex(o => o.classList.contains("active"));
+}
+function setActive(menu, idx) {
+  const opts = menuOpts(menu);
+  opts.forEach((o, i) => o.classList.toggle("active", i === idx));
+  if (idx >= 0 && opts[idx]) opts[idx].scrollIntoView({ block: "nearest" });
+}
+
+/* 打开检索列表; q 为空显示全部 (聚焦时) */
+function openMenu(inp, q = "") {
+  const menu = menuFor(inp);
+  if (!menu) return;
+  const s = String(q || "").trim().toLowerCase();
+  const items = bodyTags().filter(tag => !s
+    || bodyLabel(tag).toLowerCase().includes(s) || tag.toLowerCase().includes(s));
+  menu.innerHTML = items.length
+    ? items.map(tag =>
+        `<div class="opt" data-tag="${escapeHtml(tag)}">${escapeHtml(bodyLabel(tag))}</div>`).join("")
+    : `<div class="opt empty">无匹配</div>`;
+  menu.classList.remove("hidden");
+  setActive(menu, menuOpts(menu).findIndex(o => o.dataset.tag === inp.dataset.tag));
+}
+
+function chooseTag(inp, tag) {
+  inp.dataset.tag = tag;
+  inp.value = bodyLabel(tag);
+  closeMenu(inp);
+  refreshSeqRoles();
+  updateConfigJson();
+}
+
+/* 输入框文字 -> 可用 TAG (支持 TAG、显示名, 大小写不敏感) */
+function resolveTag(text) {
+  const s = String(text || "").trim();
+  if (!s) return null;
+  const tags = bodyTags();
+  if (tags.includes(s) || PLANETS[s] || (state.bodies && state.bodies[s])) return s;
+  const low = s.toLowerCase();
+  const exact = tags.filter(t => bodyLabel(t).toLowerCase() === low);
+  if (exact.length) return exact[0];
+  return tags.find(t => t.toLowerCase() === low) || null;
+}
+
+/* 提交输入框: 解析成功则规范化显示名, 否则静默回退到上一个 TAG */
+function commitTagInput(inp) {
+  const tag = resolveTag(inp.value);
+  if (tag) {
+    inp.dataset.tag = tag;
+    inp.value = bodyLabel(tag);
+    return tag;
+  }
+  inp.value = inp.dataset.tag ? bodyLabel(inp.dataset.tag) : "";
+  return null;
+}
+
+function rowTag(row) {
+  const inp = row.querySelector('[data-k="tag"]');
+  return (inp && inp.dataset.tag) || "";
 }
 
 /* 重新计算角色/设置 (行星变化或增删移后) */
 function refreshSeqRoles() {
   const rows = [...document.querySelectorAll("#seqNodes .node-row")];
-  state.seq = rows.map(r => r.querySelector('select[data-k="tag"]').value);
+  state.seq = rows.map(r => rowTag(r));
   rows.forEach((row, i) => {
     const role = i === 0 ? "depart" : (i === rows.length - 1 ? "arrive" : "flyby");
     row.className = "node-row " + role;
     row.dataset.i = i;
     const current = row.querySelector(".node-settings");
     current.innerHTML = "";
-    const tag = row.querySelector('select[data-k="tag"]').value;
+    const tag = rowTag(row);
     const safe = bodyNote(tag);
     current.insertAdjacentHTML("beforeend",
       `<span class="node-safe">${safe}</span>`);
@@ -323,7 +396,7 @@ function buildEraTable(eras) {
 /* 汇总为配置 JSON */
 function collectConfig() {
   const rows = [...document.querySelectorAll("#seqNodes .node-row")];
-  const seq = rows.map(r => r.querySelector('select[data-k="tag"]').value);
+  const seq = rows.map(r => rowTag(r));
   const tofB = [];
   document.querySelectorAll("#tofTable input").forEach(inp => {
     const leg = +inp.dataset.leg, k = inp.dataset.k;
@@ -374,6 +447,17 @@ $("nodeAdd").addEventListener("click", () => {
 });
 
 $("seqNodes").addEventListener("click", (e) => {
+  const opt = e.target.closest(".node-menu .opt[data-tag]");
+  if (opt) {
+    const inp = opt.closest(".node-pick").querySelector('[data-k="tag"]');
+    if (inp) chooseTag(inp, opt.dataset.tag);
+    return;
+  }
+  const pick = e.target.closest(".node-pick");
+  if (pick && !e.target.closest('[data-k="tag"]')) {   // 点箭头区域 = 聚焦输入框
+    pick.querySelector('[data-k="tag"]').focus();
+    return;
+  }
   const del = e.target.closest(".node-del");
   if (del) {
     const rows = [...document.querySelectorAll("#seqNodes .node-row")];
@@ -392,10 +476,66 @@ $("seqNodes").addEventListener("click", (e) => {
 });
 
 $("seqNodes").addEventListener("change", (e) => {
-  if (e.target.matches('select[data-k="tag"]')) refreshSeqRoles();
+  if (e.target.matches('[data-k="tag"]')) {
+    commitTagInput(e.target);
+    closeMenu(e.target);
+    refreshSeqRoles();
+  }
   updateConfigJson();
 });
-$("seqNodes").addEventListener("input", () => updateConfigJson());
+$("seqNodes").addEventListener("input", (e) => {
+  if (e.target.matches('[data-k="tag"]')) {
+    openMenu(e.target, e.target.value);       // 边输入边过滤
+    return;
+  }
+  updateConfigJson();
+});
+$("seqNodes").addEventListener("keydown", (e) => {
+  if (!e.target.matches('[data-k="tag"]')) return;
+  const inp = e.target, menu = menuFor(inp);
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    if (menu && menu.classList.contains("hidden")) openMenu(inp, inp.value);
+    const opts = menuOpts(menu);
+    if (!opts.length) return;
+    e.preventDefault();
+    let i = activeIndex(menu);
+    i = e.key === "ArrowDown" ? (i + 1) % opts.length
+                              : (i <= 0 ? opts.length - 1 : i - 1);
+    setActive(menu, i);
+  } else if (e.key === "Enter") {
+    const opts = menuOpts(menu), i = activeIndex(menu);
+    if (i >= 0 && opts[i]) {
+      e.preventDefault();
+      chooseTag(inp, opts[i].dataset.tag);
+    } else {
+      commitTagInput(inp);
+      closeMenu(inp);
+      inp.blur();
+    }
+  } else if (e.key === "Escape") {
+    e.preventDefault();
+    inp.value = inp.dataset.tag ? bodyLabel(inp.dataset.tag) : "";
+    closeMenu(inp);
+    inp.blur();
+  } else if (e.key === "Tab") {
+    closeMenu(inp);
+  }
+});
+$("seqNodes").addEventListener("focusin", (e) => {
+  if (e.target.matches('[data-k="tag"]')) {
+    e.target.select();
+    openMenu(e.target, "");                   // 聚焦时显示全部
+  }
+});
+$("seqNodes").addEventListener("focusout", (e) => {
+  if (e.target.matches('[data-k="tag"]')) {
+    const pick = e.target.closest(".node-pick");
+    if (!pick || !pick.contains(e.relatedTarget)) closeMenu(e.target);
+  }
+});
+$("seqNodes").addEventListener("mousedown", (e) => {
+  if (e.target.closest(".node-menu .opt[data-tag]")) e.preventDefault();
+});
 $("tofTable").addEventListener("click", (e) => {
   const lb = e.target.closest(".leg-lam");
   if (!lb) return;

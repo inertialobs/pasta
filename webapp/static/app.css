@@ -160,6 +160,26 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .node-row select { width: 116px; background: #0c121f; color: var(--txt);
                    border: 1px solid var(--line); border-radius: 6px;
                    padding: 5px 8px; font-size: 13px; }  /* 与 .field select 风格统一 */
+.node-pick { position: relative; flex-shrink: 0; }
+.node-pick::after { content: "▾"; position: absolute; right: 7px; top: 50%;
+                    transform: translateY(-50%); color: var(--dim);
+                    font-size: 10px; line-height: 1; pointer-events: none; }
+.node-row input.node-tag {
+  width: 116px; background: #0c121f; color: var(--txt);
+  border: 1px solid var(--line); border-radius: 6px;
+  padding: 5px 20px 5px 8px; font-size: 13px; line-height: 16px;
+}
+.node-row input.node-tag:focus { border-color: var(--acc); outline: none; }
+.node-menu { position: absolute; z-index: 40; left: 0; top: calc(100% + 4px);
+             min-width: 180px; max-width: 280px; max-height: 260px; overflow: auto;
+             padding: 4px; background: var(--panel); border: 1px solid var(--line);
+             border-radius: 8px; box-shadow: 0 10px 26px rgba(0,0,0,.5); }
+.node-menu.hidden { display: none; }
+.node-menu .opt { padding: 5px 8px; border-radius: 5px; font-size: 13px;
+                  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+                  cursor: pointer; }
+.node-menu .opt:hover, .node-menu .opt.active { background: #1a2742; }
+.node-menu .opt.empty { color: var(--dim); cursor: default; }
 .node-settings { display: flex; align-items: center; gap: 6px; margin-left: auto; }
 .node-settings label { font-size: 11px; color: var(--dim); }
 .node-settings input { width: 56px; }
