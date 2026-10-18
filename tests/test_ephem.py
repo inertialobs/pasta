@@ -225,3 +225,48 @@ def test_display_keeps_numbered_names():
     assert _display("2002 MS4") == "2002 MS4"
     assert _display("mercury") == "Mercury"
     assert _display("EARTH") == "Earth"
+
+
+def test_valid_naif_ranges():
+    from orbcalc.ephem import _valid_naif
+
+    for nid in (0, 1, 10, 199, 399, 2000001, 2090482, 3361580, -82):
+        assert _valid_naif(nid), nid
+    for nid in (4481, 10852909, 1129403230, -1210463288, 128714090):
+        assert not _valid_naif(nid), nid
+
+
+def test_scan_one_flags_and_drops_bad_naifs(tmp_path, monkeypatch):
+    import pykep as pk
+
+    from orbcalc import ephem
+
+    p = tmp_path / "bad.bsp"
+    p.write_bytes(b"")
+    monkeypatch.setattr(pk.utils, "inspect_spice_kernel", lambda _p: [1, 1129403230])
+    monkeypatch.setattr(pk.utils, "extract_coverage_window", _no_cover)
+
+    info = ephem._scan_one(p)
+    assert [b["naif"] for b in info["bodies"]] == [1]
+    assert "1129403230" in info["warning"]
+    ephem._loaded.clear()
+
+
+def test_active_kernels_skips_warned(monkeypatch):
+    from orbcalc import ephem
+
+    kern = {"file": "bad.bsp", "size": 1, "bodies": [{"naif": 1, "name": "X"}],
+            "coverage": None, "sidecar": None, "warning": "bad"}
+    monkeypatch.setattr(ephem, "scan", lambda *a, **k: [kern])
+    ephem.set_active(["bad.bsp"])
+    assert ephem.active_kernels() == []
+    ephem.set_active([])
+
+
+def test_options_includes_warning(monkeypatch):
+    from orbcalc import ephem
+
+    kern = {"file": "bad.bsp", "size": 1, "bodies": [], "coverage": None,
+            "sidecar": None, "warning": "bad"}
+    monkeypatch.setattr(ephem, "scan", lambda *a, **k: [kern])
+    assert ephem.options()[0]["warning"] == "bad"

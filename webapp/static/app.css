@@ -281,9 +281,11 @@ hr.sep { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
               border-radius: 8px; padding: 6px; background: #0c121f; }
 .ephem-list .hint { margin: 4px; }
 .ephem-item { display: flex; align-items: center; gap: 6px; padding: 3px 4px;
-              font-size: 12.5px; cursor: pointer; }
+              font-size: 12.5px; cursor: pointer; flex-wrap: wrap; }
 .ephem-item .eph-name { color: var(--txt); }
 .ephem-item .eph-meta { color: var(--dim); font-size: 11px; margin-left: auto; }
+.ephem-item .eph-warn { flex-basis: 100%; color: var(--warn); font-size: 11px;
+                        padding-left: 22px; }
 
 /* ---------- 设置: 添加天体 ---------- */
 .ephem-search { display: flex; gap: 6px; margin-bottom: 6px; }

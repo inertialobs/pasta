@@ -1078,6 +1078,7 @@ async function loadSysConfig() {
     $("sysPort").value = s.port;
     $("sysOpenBrowser").checked = !!s.open_browser;
     renderEphemerisList(s.ephemeris_options || [], s.ephemerides || []);
+    showEphWarnings(s.ephemeris_options || [], s.ephemerides || []);
     if (s.ephemeris_span) {
       $("sysEphT0").value = mjdToDate(s.ephemeris_span[0]);
       $("sysEphT1").value = mjdToDate(s.ephemeris_span[1]);
@@ -1102,14 +1103,32 @@ function renderEphemerisList(opts, chosen) {
   }
   opts.forEach(o => {
     const mb = (o.size / 1048576).toFixed(1);
+    const ok = !o.warning;
     const lab = document.createElement("label");
     lab.className = "ephem-item";
-    lab.innerHTML = `<input type="checkbox" value="${escapeHtml(o.file)}" ${sel.has(o.file) ? "checked" : ""}> ` +
+    lab.innerHTML = `<input type="checkbox" value="${escapeHtml(o.file)}" ` +
+      `${sel.has(o.file) ? "checked" : ""} ${ok ? "" : "disabled"}> ` +
       `<span class="eph-name">${escapeHtml(o.file)}</span> ` +
       `<span class="eph-meta">${o.n_bodies} 天体 · ${mb} MB</span>` +
-      `<button class="eph-del" title="删除该星历" data-file="${escapeHtml(o.file)}">✕</button>`;
+      `<button class="eph-del" title="删除该星历" data-file="${escapeHtml(o.file)}">✕</button>` +
+      (o.warning ? `<div class="eph-warn">⚠ ${escapeHtml(o.warning)}</div>` : "");
     box.appendChild(lab);
   });
+}
+function showEphWarnings(opts, chosen) {
+  const b = $("ephWarnBanner");
+  if (!b) return;
+  const sel = new Set(chosen || []);
+  const bad = (opts || []).filter(o => o.warning && sel.has(o.file));
+  if (!bad.length) {
+    b.textContent = "";
+    b.classList.add("hidden");
+    return;
+  }
+  b.textContent = "⚠ 星历文件异常：" +
+    bad.map(o => `${o.file}（${o.warning}）`).join("；") +
+    "。请取消勾选、删除或重新下载该文件。";
+  b.classList.remove("hidden");
 }
 function selectedEphemerides() {
   return [...document.querySelectorAll("#sysEphemList input[type=checkbox]:checked")].map(c => c.value);
@@ -1174,6 +1193,7 @@ $("sysEphemRescan").addEventListener("click", async () => {
     const j = await r.json();
     if (!r.ok) { alert("扫描失败: " + (j.error || r.statusText)); return; }
     renderEphemerisList(j.options || [], selectedEphemerides());
+    showEphWarnings(j.options || [], selectedEphemerides());
     await loadBodies(); refreshPlanetOptions();
   } catch (e) { alert("扫描失败: " + e.message); }
 });
@@ -1188,6 +1208,7 @@ $("sysEphemList").addEventListener("click", async (e) => {
     if (!r.ok) { alert("删除失败: " + (j.error || r.statusText)); return; }
     const s = await jfetch("/api/sysconfig");
     renderEphemerisList(s.ephemeris_options || [], s.ephemerides || []);
+    showEphWarnings(s.ephemeris_options || [], s.ephemerides || []);
     await loadBodies(); refreshPlanetOptions();
   } catch (e) { alert("删除失败: " + e.message); }
 });
@@ -1266,6 +1287,7 @@ $("sysHorizonsDownload").addEventListener("click", async () => {
     if (res.file && !chosen.includes(res.file)) chosen.push(res.file);
     const s = await jfetch("/api/sysconfig");
     renderEphemerisList(s.ephemeris_options || [], chosen);
+    showEphWarnings(s.ephemeris_options || [], chosen);
     await loadBodies(); refreshPlanetOptions();
     msg.textContent = `已添加 ${res.file}` + (res.radius_m ? ` (R=${Math.round(res.radius_m)} m)` : "")
       + (res.warning ? " ⚠ " + res.warning : "");
@@ -1322,6 +1344,7 @@ $("sysSave").addEventListener("click", async () => {
   // 一次性提示: 关标签=后台继续 (可删, 不影响脚本)
   { const ch = $("closeHint"); if (ch) ch.classList.remove("hidden"); }
   await loadBodies();
+  await loadSysConfig();          // 顶部星历异常横幅 + 设置页列表
   await loadPresets();
   await loadCompCfg();
   await loadJobList();

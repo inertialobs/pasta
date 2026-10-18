@@ -80,19 +80,32 @@ def _sidecar_bodies(side) -> dict[int, dict]:
     return out
 
 
+def _valid_naif(nid: int) -> bool:
+    """NAIF id 合法性启发式: 行星/卫星/小体/航天器之外的 id 通常意味着 kernel 损坏或非标准。"""
+    return (nid == 0 or 1 <= nid <= 999
+            or 1_000_000 <= nid <= 3_999_999
+            or -99_999 <= nid <= -1)
+
+
 def _scan_one(path: Path) -> dict:
     import pykep as pk
 
     side = _load_sidecar(path)
     metas = _sidecar_bodies(side)
     info = {"file": path.name, "size": path.stat().st_size, "bodies": [],
-            "coverage": None, "sidecar": side}
+            "coverage": None, "sidecar": side, "warning": None}
     try:
         naifs = [int(n) for n in pk.utils.inspect_spice_kernel(str(path))]
     except Exception:
         naifs = []
+    bad = [n for n in naifs if not _valid_naif(n)]
+    bad_set = set(bad)
+    if bad:
+        info["warning"] = f"疑似损坏或不兼容: {len(bad)} 个非法 NAIF id（如 {bad[0]}）"
     cov = None
     for nid in naifs:
+        if nid in bad_set:                         # 不把垃圾 id 当星体
+            continue
         meta = metas.get(nid) or {}
         name = meta.get("name")
         if not name:
@@ -160,9 +173,10 @@ def scan(force: bool = False) -> list:
 
 
 def options() -> list:
-    """供设置页: [{file,size,n_bodies,coverage}]。"""
-    return [{"file": k["file"], "size": k["size"], "n_bodies": len(k["bodies"]),
-             "coverage": k["coverage"]} for k in scan()]
+    """供设置页: [{file,size,n_bodies,coverage,warning}]。"""
+    return [{"file": k["file"], "size": k["size"],
+             "n_bodies": 0 if k.get("warning") else len(k["bodies"]),
+             "coverage": k["coverage"], "warning": k.get("warning")} for k in scan()]
 
 
 def reset_cache() -> None:
@@ -182,9 +196,10 @@ def active_files() -> list[str]:
 
 
 def active_kernels() -> list:
-    """已启用且在扫描结果中的 kernel (保持启用顺序)。"""
+    """已启用且在扫描结果中的 kernel (保持启用顺序); 跳过被判为损坏的 kernel。"""
     byname = {k["file"]: k for k in scan()}
-    return [byname[f] for f in _active if f in byname]
+    return [byname[f] for f in _active
+            if f in byname and not byname[f].get("warning")]
 
 
 def ensure_loaded(files=None) -> None:

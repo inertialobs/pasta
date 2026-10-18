@@ -333,6 +333,91 @@ def test_kernel_bodies_and_ephemeris_settings(page, live_server):
     assert page.locator("#sysEphemList input[type=checkbox]").first.is_checked()
 
 
+def test_ephemeris_warning_banner_and_disabled_checkbox(page, live_server):
+    from orbcalc import COMPUTE_DEFAULTS
+
+    title, default_cfg = _evvejs_default()
+    warning = "疑似损坏或不兼容: 1 个非法 NAIF id（如 1129403230）"
+    api = {
+        "/api/health": {"host": "127.0.0.1", "port": 8765, "describe": "test", "lan": False},
+        "/api/presets": {title: default_cfg},
+        "/api/compcfg": {**COMPUTE_DEFAULTS, "jobs": 1, "era_step_d": 10},
+        "/api/jobs": [],
+        "/api/bodies": {"EARTH": {"label": "Earth 地球", "note": "", "builtin": True}},
+        "/api/sysconfig": {
+            "host": "127.0.0.1", "port": 8765, "open_browser": True,
+            "ephemerides": ["bad.bsp"],
+            "ephemeris_options": [
+                {"file": "bad.bsp", "size": 123, "n_bodies": 0,
+                 "coverage": None, "warning": warning},
+                {"file": "ok.bsp", "size": 456, "n_bodies": 14,
+                 "coverage": None, "warning": None},
+            ],
+        },
+    }
+
+    def handler(route):
+        payload = api.get(route.request.url.split("?", 1)[0].removeprefix(live_server))
+        if payload is None:
+            route.fulfill(status=404, body="unexpected API request")
+            return
+        route.fulfill(status=200, content_type="application/json; charset=utf-8",
+                      body=json.dumps(payload, ensure_ascii=False))
+
+    page.route("**/api/**", handler)
+    page.goto(live_server)
+    page.wait_for_selector("#ephWarnBanner:not(.hidden)")
+    banner = page.locator("#ephWarnBanner").inner_text()
+    assert "bad.bsp" in banner and "1129403230" in banner
+
+    page.locator("#sysOpen").click()
+    page.wait_for_selector("#sysEphemList .ephem-item")
+    bad_cb = page.locator('#sysEphemList input[value="bad.bsp"]')
+    assert bad_cb.is_checked() and bad_cb.is_disabled()
+    assert not page.locator('#sysEphemList input[value="ok.bsp"]').is_disabled()
+
+
+def test_ephemeris_warning_no_banner_when_not_enabled(page, live_server):
+    from orbcalc import COMPUTE_DEFAULTS
+
+    title, default_cfg = _evvejs_default()
+    warning = "疑似损坏或不兼容: 1 个非法 NAIF id（如 1129403230）"
+    api = {
+        "/api/health": {"host": "127.0.0.1", "port": 8765, "describe": "test", "lan": False},
+        "/api/presets": {title: default_cfg},
+        "/api/compcfg": {**COMPUTE_DEFAULTS, "jobs": 1, "era_step_d": 10},
+        "/api/jobs": [],
+        "/api/bodies": {"EARTH": {"label": "Earth 地球", "note": "", "builtin": True}},
+        "/api/sysconfig": {
+            "host": "127.0.0.1", "port": 8765, "open_browser": True,
+            "ephemerides": [],
+            "ephemeris_options": [
+                {"file": "bad.bsp", "size": 123, "n_bodies": 0,
+                 "coverage": None, "warning": warning},
+            ],
+        },
+    }
+
+    def handler(route):
+        payload = api.get(route.request.url.split("?", 1)[0].removeprefix(live_server))
+        if payload is None:
+            route.fulfill(status=404, body="unexpected API request")
+            return
+        route.fulfill(status=200, content_type="application/json; charset=utf-8",
+                      body=json.dumps(payload, ensure_ascii=False))
+
+    page.route("**/api/**", handler)
+    page.goto(live_server)
+    page.wait_for_selector("#sysEphemList .ephem-item", state="attached")
+    assert page.locator("#ephWarnBanner").is_hidden()   # 之前没勾选 -> 不提示
+
+    page.locator("#sysOpen").click()
+    page.wait_for_selector("#sysEphemList .ephem-item")
+    cb = page.locator('#sysEphemList input[value="bad.bsp"]')
+    assert cb.is_disabled() and not cb.is_checked()     # 不可选, 但设置页仍有内联警告
+    assert "bad.bsp" in page.locator("#sysEphemList").inner_text()
+
+
 def _json_route(route, payload, status=200):
     route.fulfill(status=status, content_type="application/json; charset=utf-8",
                   body=json.dumps(payload, ensure_ascii=False))
@@ -400,3 +485,4 @@ def test_add_body_search_download_and_delete(page, live_server):
     page.wait_for_function(
         "() => ![...document.querySelectorAll('#sysEphemList .eph-name')]"
         ".some(e => e.textContent.includes('ryugu.bsp'))")
+
