@@ -5,6 +5,8 @@
 - 目录: 运行根下的 ``ephemeris/`` (缺失时由 web 层创建; 用户放入 ``*.bsp``)。
 - 扫描: 对每个 ``.bsp`` 用 ``pk.utils.inspect_spice_kernel`` 枚举 NAIF id 并取名,
   用 ``pk.utils.extract_coverage_window`` 取覆盖期 (文件级取并集)。
+- 旁挂: 同名 ``<stem>.json`` 可提供名字/μ/半径, 兼容单体与多体表 (见 ``_sidecar_bodies``)。
+- 异常: NAIF id 超出标准范围时把该 kernel 标为可疑 (``warning``), 不生成垃圾天体。
 - 加载: ``ensure_loaded`` 每进程对每个 kernel ``furnsh`` 一次 (模块级去重)。
 - 启用: ``set_active`` 指定启用哪些文件 (进程级状态; 由 settings/job cfg 驱动)。
 """

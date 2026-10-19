@@ -20,6 +20,7 @@ The name stands for *Parallel Astrodynamic Solver for Trajectory Analysis* — c
 - **Fixed random seeds**：fixed seeds + pinned numeric library versions → bit-identical reproducibility (same config, same result on repeated runs).
 - **Global compute config**：one single compute configuration (pipeline toggles / keep percentages / workers); auto-updated on every submit and restored on restart — no per-preset engine settings.
 - **3D visualization**：Plotly 3D trajectory + static PNG + structured `result.json`.
+- **External ephemeris**：load SPICE SPK kernels from `ephemeris/`, or search and download small-body ephemerides from JPL Horizons; kernel bodies join the body picker.
 
 ## Installation
 
@@ -68,6 +69,8 @@ pyinstaller build.spec           # output dist\pasta\pasta.exe (onedir)
 5. **Job management**：running / queued / cancel / delete；closing the tab keeps the job running in the background；top-right「⏹」stops the backend.
 6. **Presets**：task-preset dropdown；loading fills the mission form (with load feedback)；「save as…」exports to `presets/*.json`. The compute form is backed by a single global config (`pasta.settings.json`), auto-saved on each submit.
 7. **System settings**：port, expose to LAN, auto-open browser.
+8. **External ephemeris**：put `*.bsp` into `ephemeris/`, enable kernels in **System settings → External ephemeris**, or search/download a small-body ephemeris from JPL Horizons (see below).
+>Note: For DE441 use the official split `de441_part-1.bsp` + `de441_part-2.bsp`; a merged >2 GB file cannot be read and are excluded from the body list.
 
 ## Architecture
 
@@ -98,6 +101,7 @@ requirements.txt        runtime dependencies (install pyinstaller separately to 
 orbcalc/                engine layer (config / udp / stages / engines / run_cli / settings)
 webapp/                 Flask backend + frontend (templates + static)
 presets/                built-in + user-exported task presets
+ephemeris/              external SPICE kernels (*.bsp) + sidecars (gitignored)
 runs/<job>/             job artifacts
 ```
 ### Acknowledgments

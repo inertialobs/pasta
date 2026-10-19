@@ -19,6 +19,7 @@
 - **固定随机种子**：同版本数值库 + 固定种子 → 逐位可复现（同配置两次运行结果一致）。
 - **全局计算配置**：只有一份计算配置（流水线开关/保留比例/进程数），每次提交任务自动更新、重启自动恢复——计算参数不再挂在预设上。
 - **3D 可视化**：Plotly 3D 轨道图 + 静态 PNG + 结构化 `result.json`。
+- **外部星历**：读取 `ephemeris/` 下的 SPICE SPK kernel，或从 JPL Horizons 在线检索/下载小天体星历；kernel 内的天体自动并入天体选择列表。
 
 ## 安装
 
@@ -67,6 +68,8 @@ pyinstaller build.spec       # 产物 dist\pasta\pasta.exe
 5. **任务管理**：运行 / 排队 / 取消 / 删除；关闭标签页任务仍在后台继续；右上角「⏹ 终止程序」停止后端。
 6. **预设**：任务预设下拉，载入即填任务表单（带加载反馈），「存为…」导出到 `presets/*.json`。计算配置为全局唯一一份（`pasta.settings.json`），每次提交自动保存。
 7. **系统设置**：端口、开放局域网、自动打开浏览器。
+8. **外部星历**：把 `*.bsp` 放进 `ephemeris/`，在 **系统设置 → 外部星历** 勾选启用；也可以从 JPL Horizons 在线检索/下载小天体星历（见下）。
+>Note: DE441 请使用官方拆分的 `de441_part-1.bsp` + `de441_part-2.bsp`；合并出的 >2 GB 单文件文件无法读取，不会进入天体列表。
 
 ## 架构
 
@@ -97,6 +100,7 @@ requirements.txt        运行依赖 (打包需另装 pyinstaller)
 orbcalc/                引擎层 (config / udp / stages / engines / run_cli / settings)
 webapp/                 Flask 后端 + 前端 (templates + static)
 presets/                内置 + 用户导出的任务预设
+ephemeris/              外部 SPICE kernel (*.bsp) + 旁挂 JSON (gitignored)
 runs/<job>/             任务产物
 ```
 
