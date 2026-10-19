@@ -66,7 +66,10 @@ def local_refine(udp, x, algo_name="sbplx", iters=2000):
         pop = pg.population(prob, size=1)
         pop.set_x(0, x0)
     pop = a.evolve(pop)
-    return pop.champion_f[0], list(pop.champion_x)
+    # 部分算法 (如 xnes) 的 champion 可能越出盒边界: 先 clamp 再重算目标值,
+    # 保证返回解在边界内且目标与其一致 (对已在内者无变化)。
+    xb = np.clip(np.asarray(pop.champion_x, dtype=float), lb, ub)
+    return float(udp.fitness(list(xb))[0]), list(xb)
 
 
 def narrow_tof_box(x_ref, cfg, pct=0.10, n_legs=None):

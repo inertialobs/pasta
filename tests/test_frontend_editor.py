@@ -105,7 +105,9 @@ def test_add_move_and_delete_body_keeps_sequence_and_tof_legs_aligned(editor_pag
 
     last_index = len(expected) - 1
     last = page.locator("#seqNodes .node-row").nth(last_index)
-    last.locator('select[data-k="tag"]').select_option("MARS")
+    tag_input = last.locator('input[data-k="tag"]')
+    tag_input.fill("MARS")
+    tag_input.press("Enter")
     expected[last_index] = "MARS"
     assert read_config(page)["seq"] == expected
     assert_roles_and_leg_labels(page, expected)
@@ -270,3 +272,217 @@ def test_default_preset_falls_back_to_first_when_absent(page, live_server):
     _mock_presets_page(page, live_server, {"AAA other": other})
     page.wait_for_function("() => document.querySelector('#presetSelect').value === 'AAA other'")
     assert read_config(page)["seq"] == ["EARTH", "MARS"]
+
+
+def test_kernel_bodies_and_ephemeris_settings(page, live_server):
+    import copy
+
+    from orbcalc import COMPUTE_DEFAULTS
+
+    title, default_cfg = _evvejs_default()
+    bodies = {t: {"label": t.title(), "note": "", "builtin": True}
+              for t in ["MERCURY", "VENUS", "EARTH", "MARS", "JUPITER",
+                        "SATURN", "URANUS", "NEPTUNE"]}
+    bodies["CERES"] = {"label": "Ceres", "note": "外部星历 (kernel)", "builtin": False}
+    api = {
+        "/api/health": {"host": "127.0.0.1", "port": 8765, "describe": "test", "lan": False},
+        "/api/presets": {title: default_cfg},
+        "/api/compcfg": {**COMPUTE_DEFAULTS, "jobs": 1, "era_step_d": 10},
+        "/api/jobs": [],
+        "/api/bodies": bodies,
+        "/api/sysconfig": {"host": "127.0.0.1", "port": 8765, "open_browser": True,
+                           "ephemerides": ["ceres_test.bsp"],
+                           "ephemeris_options": [{"file": "ceres_test.bsp", "size": 123456,
+                                                  "n_bodies": 1, "coverage": None}]},
+    }
+
+    def handler(route):
+        payload = api.get(route.request.url.split("?", 1)[0].removeprefix(live_server))
+        if payload is None:
+            route.fulfill(status=404, body="unexpected API request")
+            return
+        route.fulfill(status=200, content_type="application/json; charset=utf-8",
+                      body=json.dumps(payload, ensure_ascii=False))
+
+    page.route("**/api/**", handler)
+    page.goto(live_server)
+    tag_input = page.locator("#seqNodes .node-row").first.locator('input[data-k="tag"]')
+    tag_input.focus()
+    page.wait_for_selector(".node-menu:not(.hidden) .opt[data-tag]")
+    tags = page.locator(".node-menu:not(.hidden) .opt[data-tag]").evaluate_all(
+        "els => els.map(e => e.dataset.tag)")
+    assert "CERES" in tags
+
+    tag_input.fill("CERES")
+    tag_input.press("Enter")
+    assert tag_input.get_attribute("data-tag") == "CERES"
+
+    tag_input.fill("Ven")
+    page.locator(".node-menu:not(.hidden) .opt[data-tag='VENUS']").click()
+    assert tag_input.get_attribute("data-tag") == "VENUS"
+
+    tag_input.fill("Mars")
+    tag_input.press("ArrowDown")
+    tag_input.press("Enter")
+    assert tag_input.get_attribute("data-tag") == "MARS"
+
+    page.locator("#sysOpen").click()
+    page.wait_for_selector("#sysEphemList .ephem-item")
+    text = page.locator("#sysEphemList").inner_text()
+    assert "ceres_test.bsp" in text and "1 天体" in text
+    assert page.locator("#sysEphemList input[type=checkbox]").first.is_checked()
+
+
+def test_ephemeris_warning_banner_and_disabled_checkbox(page, live_server):
+    from orbcalc import COMPUTE_DEFAULTS
+
+    title, default_cfg = _evvejs_default()
+    warning = "疑似损坏或不兼容: 1 个非法 NAIF id（如 1129403230）"
+    api = {
+        "/api/health": {"host": "127.0.0.1", "port": 8765, "describe": "test", "lan": False},
+        "/api/presets": {title: default_cfg},
+        "/api/compcfg": {**COMPUTE_DEFAULTS, "jobs": 1, "era_step_d": 10},
+        "/api/jobs": [],
+        "/api/bodies": {"EARTH": {"label": "Earth 地球", "note": "", "builtin": True}},
+        "/api/sysconfig": {
+            "host": "127.0.0.1", "port": 8765, "open_browser": True,
+            "ephemerides": ["bad.bsp"],
+            "ephemeris_options": [
+                {"file": "bad.bsp", "size": 123, "n_bodies": 0,
+                 "coverage": None, "warning": warning},
+                {"file": "ok.bsp", "size": 456, "n_bodies": 14,
+                 "coverage": None, "warning": None},
+            ],
+        },
+    }
+
+    def handler(route):
+        payload = api.get(route.request.url.split("?", 1)[0].removeprefix(live_server))
+        if payload is None:
+            route.fulfill(status=404, body="unexpected API request")
+            return
+        route.fulfill(status=200, content_type="application/json; charset=utf-8",
+                      body=json.dumps(payload, ensure_ascii=False))
+
+    page.route("**/api/**", handler)
+    page.goto(live_server)
+    page.wait_for_selector("#ephWarnBanner:not(.hidden)")
+    banner = page.locator("#ephWarnBanner").inner_text()
+    assert "bad.bsp" in banner and "1129403230" in banner
+
+    page.locator("#sysOpen").click()
+    page.wait_for_selector("#sysEphemList .ephem-item")
+    bad_cb = page.locator('#sysEphemList input[value="bad.bsp"]')
+    assert bad_cb.is_checked() and bad_cb.is_disabled()
+    assert not page.locator('#sysEphemList input[value="ok.bsp"]').is_disabled()
+
+
+def test_ephemeris_warning_no_banner_when_not_enabled(page, live_server):
+    from orbcalc import COMPUTE_DEFAULTS
+
+    title, default_cfg = _evvejs_default()
+    warning = "疑似损坏或不兼容: 1 个非法 NAIF id（如 1129403230）"
+    api = {
+        "/api/health": {"host": "127.0.0.1", "port": 8765, "describe": "test", "lan": False},
+        "/api/presets": {title: default_cfg},
+        "/api/compcfg": {**COMPUTE_DEFAULTS, "jobs": 1, "era_step_d": 10},
+        "/api/jobs": [],
+        "/api/bodies": {"EARTH": {"label": "Earth 地球", "note": "", "builtin": True}},
+        "/api/sysconfig": {
+            "host": "127.0.0.1", "port": 8765, "open_browser": True,
+            "ephemerides": [],
+            "ephemeris_options": [
+                {"file": "bad.bsp", "size": 123, "n_bodies": 0,
+                 "coverage": None, "warning": warning},
+            ],
+        },
+    }
+
+    def handler(route):
+        payload = api.get(route.request.url.split("?", 1)[0].removeprefix(live_server))
+        if payload is None:
+            route.fulfill(status=404, body="unexpected API request")
+            return
+        route.fulfill(status=200, content_type="application/json; charset=utf-8",
+                      body=json.dumps(payload, ensure_ascii=False))
+
+    page.route("**/api/**", handler)
+    page.goto(live_server)
+    page.wait_for_selector("#sysEphemList .ephem-item", state="attached")
+    assert page.locator("#ephWarnBanner").is_hidden()   # 之前没勾选 -> 不提示
+
+    page.locator("#sysOpen").click()
+    page.wait_for_selector("#sysEphemList .ephem-item")
+    cb = page.locator('#sysEphemList input[value="bad.bsp"]')
+    assert cb.is_disabled() and not cb.is_checked()     # 不可选, 但设置页仍有内联警告
+    assert "bad.bsp" in page.locator("#sysEphemList").inner_text()
+
+
+def _json_route(route, payload, status=200):
+    route.fulfill(status=status, content_type="application/json; charset=utf-8",
+                  body=json.dumps(payload, ensure_ascii=False))
+
+
+def test_add_body_search_download_and_delete(page, live_server):
+    from orbcalc import COMPUTE_DEFAULTS
+
+    title, default_cfg = _evvejs_default()
+    state = {"ephemerides": []}
+
+    def handler(route):
+        url = route.request.url.split("?", 1)[0].removeprefix(live_server)
+        method = route.request.method
+        if url == "/api/health":
+            return _json_route(route, {"host": "127.0.0.1", "port": 8765, "describe": "t", "lan": False})
+        if url == "/api/presets":
+            return _json_route(route, {title: default_cfg})
+        if url == "/api/compcfg":
+            return _json_route(route, {**COMPUTE_DEFAULTS, "jobs": 1, "era_step_d": 10})
+        if url == "/api/jobs":
+            return _json_route(route, [])
+        if url == "/api/bodies":
+            return _json_route(route, {"EARTH": {"label": "Earth", "note": "", "builtin": True}})
+        if url == "/api/sysconfig" and method == "GET":
+            return _json_route(route, {
+                "host": "127.0.0.1", "port": 8765, "open_browser": True,
+                "ephemerides": state["ephemerides"], "ephemeris_span": [4000.0, 5000.0],
+                "ephemeris_options": [{"file": f, "size": 1000, "n_bodies": 1, "coverage": None}
+                                      for f in state["ephemerides"]]})
+        if url == "/api/horizons/search":
+            return _json_route(route, {"results": [
+                {"kind": "small_body", "naif": 2162173, "label": "162173 Ryugu",
+                 "orbit_class": "Apollo", "horizons": "162173;"}]})
+        if url == "/api/ephemeris/add" and method == "POST":
+            state["ephemerides"].append("ryugu.bsp")
+            return _json_route(route, {"task_id": "t1"})
+        if url == "/api/ephemeris/task/t1":
+            return _json_route(route, {"status": "done", "result": {
+                "file": "ryugu.bsp", "naif": 2162173, "name": "Ryugu",
+                "radius_m": 448.0, "coverage": [4000, 5000], "warning": None}})
+        if url.startswith("/api/ephemeris/") and method == "DELETE":
+            fn = url.rsplit("/", 1)[1]
+            state["ephemerides"] = [f for f in state["ephemerides"] if f != fn]
+            return _json_route(route, {"deleted": fn})
+        return _json_route(route, {"error": "unexpected " + url}, status=404)
+
+    page.route("**/api/**", handler)
+    page.on("dialog", lambda d: d.accept())      # 删除确认框
+    page.goto(live_server)
+    page.wait_for_selector("#seqNodes .node-row")
+
+    page.locator("#sysOpen").click()
+    page.locator("#sysHorizonsQuery").fill("Ryugu")
+    page.locator("#sysHorizonsSearch").click()
+    page.wait_for_selector("#sysHorizonsResults .eph-result")
+    assert "Ryugu" in page.locator("#sysHorizonsResults").inner_text()
+
+    page.locator("#sysHorizonsDownload").click()
+    page.wait_for_function(
+        "() => [...document.querySelectorAll('#sysEphemList .eph-name')]"
+        ".some(e => e.textContent.includes('ryugu.bsp'))")
+
+    page.locator("#sysEphemList .eph-del").first.click()
+    page.wait_for_function(
+        "() => ![...document.querySelectorAll('#sysEphemList .eph-name')]"
+        ".some(e => e.textContent.includes('ryugu.bsp'))")
+

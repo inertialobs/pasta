@@ -1,51 +1,198 @@
 # -*- coding: utf-8 -*-
 """
-行星混合模型: de440s 精密星历 (位置/速度) + JPL LP 物理参数 (μ, 半径)。
+天体物理参数表 + 星历封装。
 
-- 来源: temp/EVVEJU_TOF_1DSM_mp.py 的 HybridPlanet / make_planet。
-- 注册表按 TAG 提供 (spice 名, jpl 名, 默认安全半径)。
-- build_seq(cfg): 按 cfg.seq 构建 pk.planet 序列 (进程内缓存, spawn worker 各自重建)。
+- 物理参数 (μ_self, 半径, safe_radius): 内置 BODY_PARAMS 提供 (行星/矮行星), 未列入
+  天体默认 μ=0/半径=0/safe=0。
+- 星历 (位置/速度): 内置行星用 de440s; 其它天体 (矮行星/小行星/…) 来自已启用的外部
+  SPICE kernel (ephemeris/*.bsp, 见 orbcalc/ephem.py), 用 pk.udpla.spice 读取。
+- 中心天体统一为太阳 (pk.MU_SUN)。
+
+历史: 原先 μ/半径 来自 pk.udpla.jpl_lp; 现抄入 BODY_PARAMS 以统一来源, 数值逐位保持。
 """
 from __future__ import annotations
 
 import pykep as pk
 
-# ---------------------------------------------------------------------------
-# 行星注册表: TAG -> (SPICE 名, JPL LP 名, 默认安全半径 m | None)
-# 注: 安全半径 = 飞掠下限。岩质行星 = 半径 + 200 km; 巨行星 = 2 × 赤道半径。
-# ---------------------------------------------------------------------------
-REGISTRY = {
-    "MERCURY": ("MERCURY", "mercury", 2440.0e3 + 200.0e3),
-    "VENUS":   ("VENUS", "venus", 6052.0e3 + 200.0e3),            # 地表以上 200 km
-    "EARTH":   ("EARTH", "earth", 6578.137e3),                    # ~200 km
-    "MARS":    ("MARS BARYCENTER", "mars", 3389.5e3 + 200.0e3),
-    "JUPITER": ("JUPITER BARYCENTER", "jupiter", 2.0 * 71492e3),
-    "SATURN":  ("SATURN BARYCENTER", "saturn", 2.0 * 58232e3),
-    "URANUS":  ("URANUS BARYCENTER", "uranus", None),
-    "NEPTUNE": ("NEPTUNE BARYCENTER", "neptune", 2.0 * 24622e3),
+from . import ephem
+
+# 中心天体 GM (= jpl_lp 的 mu_central_body 值, 与 pk.MU_SUN 逐位一致)
+MU_CENTRAL = pk.MU_SUN
+
+# 内置天体物理参数: TAG -> spec
+#   naif        : NAIF id (kernel 枚举/去重用)
+#   spice       : de440s 中的 NAIF 名; None 表示星历需来自外部 kernel
+#   name        : 简短名 (报告/绘图)
+#   mu_self     : 自身体 GM [m^3/s^2]
+#   radius      : 赤道半径 [m]
+#   safe_radius : 飞掠安全半径 [m]
+BODY_PARAMS = {
+    "MERCURY": {"naif": 199, "spice": "MERCURY", "name": "mercury",
+                "mu_self": 22032000000000.0, "radius": 2440000.0, "safe_radius": 2640000.0},
+    "VENUS":   {"naif": 299, "spice": "VENUS", "name": "venus",
+                "mu_self": 324859000000000.0, "radius": 6052000.0, "safe_radius": 6252000.0},
+    "EARTH":   {"naif": 399, "spice": "EARTH", "name": "earth",
+                "mu_self": 398600441800000.0, "radius": 6378000.0, "safe_radius": 6578137.0},
+    "MARS":    {"naif": 4, "spice": "MARS BARYCENTER", "name": "mars",
+                "mu_self": 42828000000000.0, "radius": 3397000.0, "safe_radius": 3589500.0},
+    "JUPITER": {"naif": 5, "spice": "JUPITER BARYCENTER", "name": "jupiter",
+                "mu_self": 1.26686534e+17, "radius": 71492000.0, "safe_radius": 142984000.0},
+    "SATURN":  {"naif": 6, "spice": "SATURN BARYCENTER", "name": "saturn",
+                "mu_self": 3.7931187e+16, "radius": 60330000.0, "safe_radius": 116464000.0},
+    # URANUS 原 REGISTRY 安全半径为 None (回退 jpl_lp), 此处直接写入该值以保持逐位一致
+    "URANUS":  {"naif": 7, "spice": "URANUS BARYCENTER", "name": "uranus",
+                "mu_self": 5793939000000000.0, "radius": 25362000.0, "safe_radius": 27898200.000000004},
+    "NEPTUNE": {"naif": 8, "spice": "NEPTUNE BARYCENTER", "name": "neptune",
+                "mu_self": 6836529000000000.0, "radius": 24622000.0, "safe_radius": 49244000.0},
 }
-DEFAULT_SAFE_RADIUS = {tag: v[2] for tag, v in REGISTRY.items()}
+
+# 未列入表的天体默认物理参数 (小行星/彗星: 质量与半径按 0 处理)
+DEFAULT_BODY = {"mu_self": 0.0, "radius": 0.0, "safe_radius": 0.0}
+
+# 无卫星行星: 系统质心 NAIF == 本体中心 NAIF (位置相同), 视为同一内置天体,
+# 使其继承内置 μ/半径 且不在下拉里出现 *_BARYCENTER 冗余项。
+# (有卫星的行星质心≠本体, 不在此列, 保持各自独立。)
+BARYCENTER_ALIASES = {
+    1: "MERCURY",   # 1 = MERCURY BARYCENTER  == 199 = MERCURY
+    2: "VENUS",     # 2 = VENUS BARYCENTER    == 299 = VENUS
+}
+
+DEFAULT_SAFE_RADIUS = {tag: spec["safe_radius"] for tag, spec in BODY_PARAMS.items()}
 
 # 简名 (报告/绘图用) — 同一 TAG 多次出现时自动加序号 (Venus1, Venus2, ...)
-TAG_SHORT = {
-    "MERCURY": "Mercury", "VENUS": "Venus", "EARTH": "Earth",
-    "MARS": "Mars", "JUPITER": "Jupiter", "SATURN": "Saturn",
-    "URANUS": "Uranus", "NEPTUNE": "Neptune",
-}
+TAG_SHORT = {tag: spec["name"].capitalize() for tag, spec in BODY_PARAMS.items()}
+
+
+def _num(value, default=0.0) -> float:
+    """可空值 -> float; None/非法值回退 default。"""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _display(name, tag="") -> str:
+    """显示名: 带编号的名字保持原样 (如 "52 Europa"), 纯小写内置名首字母大写。"""
+    s = str(name or tag)
+    return s if s[:1].isdigit() else s.capitalize()
+
+
+# ---------------------------------------------------------------------------
+def set_active(files):
+    """设置启用的外部星历 (转发 ephem 并清空行星缓存)。"""
+    ephem.set_active(files)
+    _cache.clear()
+
+
+def _kernel_bodies():
+    """已启用 kernel 的天体: tag -> {naif, name, file}; 与内置按 NAIF 去重, 先启用者优先。"""
+    builtin_by_naif = {s["naif"]: t for t, s in BODY_PARAMS.items()}
+    builtin_by_naif.update(BARYCENTER_ALIASES)     # 无卫星行星: 质心 -> 内置本体
+    out = {}
+    for k in ephem.active_kernels():
+        for b in k["bodies"]:
+            tag = (builtin_by_naif.get(b["naif"]) or ephem.tag_from_name(b["name"])
+                   or f"NAIF_{b['naif']}")
+            item = {"naif": b["naif"], "name": b["name"], "file": k["file"]}
+            for key in ("mu_self", "radius", "safe_radius"):   # 旁挂元数据 (可选)
+                if b.get(key) is not None:
+                    item[key] = b[key]
+            out.setdefault(tag, item)
+    return out
+
+
+def _resolve(tag):
+    """tag -> (spec, kernel_file)。kernel_file=None 表示用内置 de440s; 未知 (None, None)。
+
+    spec: {naif, spice(名或NAIF id), name, mu_self, radius, safe_radius}。
+    """
+    base = BODY_PARAMS.get(tag)
+    if base is not None and base.get("spice"):
+        return dict(base), None
+    kb = _kernel_bodies().get(tag)
+    if kb is None:
+        return None, None
+    if base is not None:                       # 表里有物理参数 (如矮行星), 星历来自 kernel
+        spec = dict(base)
+    else:
+        side = ephem.sidecar_for_naif(kb["naif"])
+        mu, radius, safe = kb.get("mu_self"), kb.get("radius"), kb.get("safe_radius")
+        if mu is None and radius is None and side is not None:   # 旧单体旁挂
+            mu, radius, safe = side.get("mu_self"), side.get("radius"), side.get("safe_radius")
+        spec = {"name": kb.get("name") or (side.get("name") if side else None) or tag,
+                "mu_self": _num(mu, DEFAULT_BODY["mu_self"]),
+                "radius": _num(radius, DEFAULT_BODY["radius"]),
+                "safe_radius": _num(safe, DEFAULT_BODY["safe_radius"])}
+    spec["naif"] = kb["naif"]
+    spec["spice"] = kb["naif"]                 # 用 NAIF id 直接定位 (名可能不规范)
+    return spec, kb["file"]
+
+
+def known_tags():
+    """可用天体 TAG: 内置行星 ∪ 已启用 kernel 天体。"""
+    tags = {t for t, s in BODY_PARAMS.items() if s.get("spice")}
+    tags |= set(_kernel_bodies())
+    return tags
+
+
+def body_info(tag):
+    """供 /api/bodies: {label, note, builtin, kernel} 或 None。"""
+    spec, kfile = _resolve(tag)
+    if spec is None:
+        return None
+    note = ""
+    if kfile is not None:
+        no_phys = float(spec.get("mu_self") or 0.0) <= 0 and float(spec.get("radius") or 0.0) <= 0
+        note = "外部星历 (kernel, 无 μ/半径: 仅定时路点)" if no_phys else "外部星历 (kernel)"
+    return {"label": _display(spec.get("name"), tag),
+            "note": note,
+            "builtin": kfile is None,
+            "kernel": kfile}
+
+
+class ConstPhys:
+    """常量物理参数 (取代 pk.udpla.jpl_lp, 只提供 μ/半径/safe_radius)。"""
+
+    def __init__(self, mu_self, radius, safe_radius, mu_central=MU_CENTRAL, name=None):
+        self._mu_self = float(mu_self)
+        self._radius = float(radius)
+        self._safe = float(safe_radius)
+        self._mu_central = float(mu_central)
+        self._name = name
+
+    def get_name(self):
+        return self._name
+
+    @property
+    def mu_self(self):
+        return self._mu_self
+
+    @property
+    def mu_central_body(self):
+        return self._mu_central
+
+    @property
+    def radius(self):
+        return self._radius
+
+    @property
+    def safe_radius(self):
+        return self._safe
 
 
 class HybridPlanet:
-    def __init__(self, eph, phys, jpl_name, safe_radius_m=None):
+    def __init__(self, eph, phys, name, safe_radius_m=None, source="de440s"):
         self._eph = eph
         self._phys = phys
-        self._jpl = jpl_name
+        self._name = name
         self._safe = safe_radius_m
+        self._source = source
 
     def eph(self, when):
         return self._eph.eph(when)
 
     def get_name(self):
-        return self._phys.get_name() if hasattr(self._phys, "get_name") else self._jpl
+        return self._phys.get_name() if hasattr(self._phys, "get_name") else self._name
 
     def get_mu_self(self):
         return self._phys.mu_self
@@ -76,13 +223,28 @@ class HybridPlanet:
         return self._safe if self._safe is not None else self._phys.safe_radius
 
     def __str__(self):
-        return f"{self._jpl} (de440s eph)"
+        return f"{self._name} ({self._source} eph)"
 
 
-def make_planet(spice, jpl, safe_radius_m=None):
-    eph = pk.planet(pk.udpla.de440s(spice, "ECLIPJ2000", "SSB"))
-    phys = pk.planet(pk.udpla.jpl_lp(jpl))
-    return pk.planet(HybridPlanet(eph, phys, jpl, safe_radius_m))
+def make_planet(spice, params, safe_radius_m=None, kernel=None):
+    """按物理参数 spec 构建 pk.planet。
+
+    kernel=None: 位置来自内置 de440s; 否则来自已加载的 SPICE kernel (pk.udpla.spice)。
+    """
+    if kernel is not None:
+        ephem.ensure_loaded([kernel])
+        eph = pk.planet(pk.udpla.spice(spice, "ECLIPJ2000", "SSB"))
+        source = "kernel"
+    else:
+        eph = pk.planet(pk.udpla.de440s(spice, "ECLIPJ2000", "SSB"))
+        source = "de440s"
+    phys = ConstPhys(
+        mu_self=params["mu_self"], radius=params["radius"],
+        safe_radius=params["safe_radius"], mu_central=MU_CENTRAL,
+        name=params.get("name", str(spice)),
+    )
+    return pk.planet(HybridPlanet(eph, phys, params.get("name", str(spice)),
+                                  safe_radius_m, source=source))
 
 
 _cache = {}
@@ -91,19 +253,27 @@ _cache = {}
 def get_planet(tag):
     """按 TAG 构建 pk.planet (进程内缓存)."""
     if tag not in _cache:
-        spice, jpl, _def_safe = REGISTRY.get(tag, (None, None, None))
-        if spice is None:
+        spec, kfile = _resolve(tag)
+        if spec is None:
             raise KeyError(f"未知行星 TAG: {tag}")
-        _cache[tag] = make_planet(spice, jpl)
+        _cache[tag] = make_planet(spec["spice"], spec, kernel=kfile)
     return _cache[tag]
 
 
 def planet_safe_radius(tag, cfg):
-    """行星安全半径: cfg.safe_radius 覆盖优先, 否则注册表默认."""
+    """行星安全半径: cfg.safe_radius 覆盖优先, 否则注册表/默认."""
     if tag in cfg.safe_radius:
         return float(cfg.safe_radius[tag])
-    _def = REGISTRY.get(tag, (None, None, None))[2]
-    return _def  # None → 用物理行星自带 safe_radius
+    base = BODY_PARAMS.get(tag)
+    if base is not None:
+        return base["safe_radius"]
+    kb = _kernel_bodies().get(tag)
+    if kb is not None:
+        side = ephem.sidecar_for_naif(kb["naif"])
+        if side is not None and side.get("safe_radius") is not None:
+            return float(side["safe_radius"])
+        return DEFAULT_BODY["safe_radius"]
+    return None
 
 
 def build_seq(cfg):
@@ -111,7 +281,9 @@ def build_seq(cfg):
 
     safe_radius 覆盖在行星构建时即生效 (HybridPlanet._safe)。
     """
-    key = (tuple(cfg.seq), tuple(sorted((k, str(v)) for k, v in cfg.safe_radius.items())))
+    key = (tuple(cfg.seq),
+           tuple(sorted((k, str(v)) for k, v in cfg.safe_radius.items())),
+           tuple(ephem.active_files()))
     if key in _cache:
         return _cache[key]
     seq, names = [], []
@@ -119,11 +291,11 @@ def build_seq(cfg):
     for tag in cfg.seq:
         counts[tag] = counts.get(tag, 0) + 1
         tag_safe = planet_safe_radius(tag, cfg)
-        spice, jpl, _ = REGISTRY.get(tag, (None, None, None))
-        if spice is None:
+        spec, kfile = _resolve(tag)
+        if spec is None:
             raise KeyError(f"未知行星 TAG: {tag}")
-        seq.append(make_planet(spice, jpl, tag_safe))
-        short = TAG_SHORT.get(tag, tag)
+        seq.append(make_planet(spec["spice"], spec, tag_safe, kernel=kfile))
+        short = TAG_SHORT.get(tag, _display(spec.get("name"), tag))
         names.append(f"{short}{counts[tag]}" if counts[tag] > 1 else short)
     _cache[key] = (seq, names)
     return _cache[key]

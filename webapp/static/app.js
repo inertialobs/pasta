@@ -47,6 +47,7 @@ const state = {
   jobs: [], activeJobId: null, pollTimer: null, plotlyReady: false,
   seq: [], pendingTofBounds: null, pendingLambert: null, busy: false, showDsmDir: true,
   timeMode: "elapsed", dsmMode: "total", arriveMode: "elapsed", lastResult: null,
+  bodies: null,   // /api/bodies: 可用天体 (内置行星 ∪ 已启用 kernel 天体)
 };
 
 /* ============================================================
@@ -141,9 +142,14 @@ function makeNodeRow(tag) {
   const row = document.createElement("div");
   row.className = "node-row flyby";
   row.innerHTML = `
-    <select data-k="tag">${planetOptions(tag)}</select>
+    <span class="node-pick">
+      <input class="node-tag" data-k="tag" data-tag="${escapeHtml(tag)}"
+             value="${escapeHtml(bodyLabel(tag))}" autocomplete="off"
+             spellcheck="false" title="输入星体名检索">
+      <div class="node-menu hidden"></div>
+    </span>
     <span class="node-settings" data-k="settings">
-      <span class="node-safe">${PLANETS[tag] ? PLANETS[tag].note : ""}</span>
+      <span class="node-safe">${bodyNote(tag)}</span>
     </span>
     <span class="node-moves">
       <button class="node-move up" title="上移">↑</button>
@@ -165,6 +171,7 @@ function buildSeqEditor(seq, tofBounds, lambertTypes) {
     wrap.appendChild(row);
   });
   refreshSeqRoles();
+  refreshPlanetOptions();      // 建立/刷新检索列表
 }
 
 /* 每腿转移类型 (按 TOF 表逐行读取, data-leg 即腿序) */
@@ -176,23 +183,116 @@ function readLegLambert() {
   return arr;
 }
 
-function planetOptions(sel) {
-  return Object.entries(PLANETS).map(([tag, p]) =>
-    `<option value="${tag}" ${tag === sel ? "selected" : ""}>${p.label}</option>`).join("");
+/* 可用天体: 优先 /api/bodies (含 kernel 天体), 未加载时回退内置 8 大行星 */
+function bodyTags() {
+  return (state.bodies && Object.keys(state.bodies).length)
+    ? Object.keys(state.bodies) : Object.keys(PLANETS);
+}
+function bodyLabel(tag) {
+  if (PLANETS[tag]) return PLANETS[tag].label;                 // 内置中文标签优先
+  const b = state.bodies && state.bodies[tag];
+  return (b && b.label) ? b.label : tag;
+}
+function bodyNote(tag) {
+  if (PLANETS[tag]) return PLANETS[tag].note;
+  const b = state.bodies && state.bodies[tag];
+  return (b && b.note) ? b.note : "";
+}
+async function loadBodies() {
+  try { state.bodies = await jfetch("/api/bodies"); } catch (e) { state.bodies = null; }
+}
+/* 启用星历变化后, 刷新各节点显示名 (保留当前 TAG) */
+function refreshPlanetOptions() {
+  document.querySelectorAll('#seqNodes .node-row [data-k="tag"]').forEach(inp => {
+    if (inp.dataset.tag) inp.value = bodyLabel(inp.dataset.tag);
+    closeMenu(inp);
+  });
+}
+
+function menuFor(inp) {
+  const pick = inp.closest(".node-pick");
+  return pick ? pick.querySelector(".node-menu") : null;
+}
+function menuOpts(menu) {
+  return menu ? [...menu.querySelectorAll(".opt[data-tag]")] : [];
+}
+function closeMenu(inp) {
+  const menu = menuFor(inp);
+  if (menu) menu.classList.add("hidden");
+}
+function activeIndex(menu) {
+  return menuOpts(menu).findIndex(o => o.classList.contains("active"));
+}
+function setActive(menu, idx) {
+  const opts = menuOpts(menu);
+  opts.forEach((o, i) => o.classList.toggle("active", i === idx));
+  if (idx >= 0 && opts[idx]) opts[idx].scrollIntoView({ block: "nearest" });
+}
+
+/* 打开检索列表; q 为空显示全部 (聚焦时) */
+function openMenu(inp, q = "") {
+  const menu = menuFor(inp);
+  if (!menu) return;
+  const s = String(q || "").trim().toLowerCase();
+  const items = bodyTags().filter(tag => !s
+    || bodyLabel(tag).toLowerCase().includes(s) || tag.toLowerCase().includes(s));
+  menu.innerHTML = items.length
+    ? items.map(tag =>
+        `<div class="opt" data-tag="${escapeHtml(tag)}">${escapeHtml(bodyLabel(tag))}</div>`).join("")
+    : `<div class="opt empty">无匹配</div>`;
+  menu.classList.remove("hidden");
+  setActive(menu, menuOpts(menu).findIndex(o => o.dataset.tag === inp.dataset.tag));
+}
+
+function chooseTag(inp, tag) {
+  inp.dataset.tag = tag;
+  inp.value = bodyLabel(tag);
+  closeMenu(inp);
+  refreshSeqRoles();
+  updateConfigJson();
+}
+
+/* 输入框文字 -> 可用 TAG (支持 TAG、显示名, 大小写不敏感) */
+function resolveTag(text) {
+  const s = String(text || "").trim();
+  if (!s) return null;
+  const tags = bodyTags();
+  if (tags.includes(s) || PLANETS[s] || (state.bodies && state.bodies[s])) return s;
+  const low = s.toLowerCase();
+  const exact = tags.filter(t => bodyLabel(t).toLowerCase() === low);
+  if (exact.length) return exact[0];
+  return tags.find(t => t.toLowerCase() === low) || null;
+}
+
+/* 提交输入框: 解析成功则规范化显示名, 否则静默回退到上一个 TAG */
+function commitTagInput(inp) {
+  const tag = resolveTag(inp.value);
+  if (tag) {
+    inp.dataset.tag = tag;
+    inp.value = bodyLabel(tag);
+    return tag;
+  }
+  inp.value = inp.dataset.tag ? bodyLabel(inp.dataset.tag) : "";
+  return null;
+}
+
+function rowTag(row) {
+  const inp = row.querySelector('[data-k="tag"]');
+  return (inp && inp.dataset.tag) || "";
 }
 
 /* 重新计算角色/设置 (行星变化或增删移后) */
 function refreshSeqRoles() {
   const rows = [...document.querySelectorAll("#seqNodes .node-row")];
-  state.seq = rows.map(r => r.querySelector('select[data-k="tag"]').value);
+  state.seq = rows.map(r => rowTag(r));
   rows.forEach((row, i) => {
     const role = i === 0 ? "depart" : (i === rows.length - 1 ? "arrive" : "flyby");
     row.className = "node-row " + role;
     row.dataset.i = i;
     const current = row.querySelector(".node-settings");
     current.innerHTML = "";
-    const tag = row.querySelector('select[data-k="tag"]').value;
-    const safe = PLANETS[tag] ? PLANETS[tag].note : "";
+    const tag = rowTag(row);
+    const safe = bodyNote(tag);
     current.insertAdjacentHTML("beforeend",
       `<span class="node-safe">${safe}</span>`);
     const del = row.querySelector(".node-del");
@@ -296,7 +396,7 @@ function buildEraTable(eras) {
 /* 汇总为配置 JSON */
 function collectConfig() {
   const rows = [...document.querySelectorAll("#seqNodes .node-row")];
-  const seq = rows.map(r => r.querySelector('select[data-k="tag"]').value);
+  const seq = rows.map(r => rowTag(r));
   const tofB = [];
   document.querySelectorAll("#tofTable input").forEach(inp => {
     const leg = +inp.dataset.leg, k = inp.dataset.k;
@@ -347,6 +447,17 @@ $("nodeAdd").addEventListener("click", () => {
 });
 
 $("seqNodes").addEventListener("click", (e) => {
+  const opt = e.target.closest(".node-menu .opt[data-tag]");
+  if (opt) {
+    const inp = opt.closest(".node-pick").querySelector('[data-k="tag"]');
+    if (inp) chooseTag(inp, opt.dataset.tag);
+    return;
+  }
+  const pick = e.target.closest(".node-pick");
+  if (pick && !e.target.closest('[data-k="tag"]')) {   // 点箭头区域 = 聚焦输入框
+    pick.querySelector('[data-k="tag"]').focus();
+    return;
+  }
   const del = e.target.closest(".node-del");
   if (del) {
     const rows = [...document.querySelectorAll("#seqNodes .node-row")];
@@ -365,10 +476,66 @@ $("seqNodes").addEventListener("click", (e) => {
 });
 
 $("seqNodes").addEventListener("change", (e) => {
-  if (e.target.matches('select[data-k="tag"]')) refreshSeqRoles();
+  if (e.target.matches('[data-k="tag"]')) {
+    commitTagInput(e.target);
+    closeMenu(e.target);
+    refreshSeqRoles();
+  }
   updateConfigJson();
 });
-$("seqNodes").addEventListener("input", () => updateConfigJson());
+$("seqNodes").addEventListener("input", (e) => {
+  if (e.target.matches('[data-k="tag"]')) {
+    openMenu(e.target, e.target.value);       // 边输入边过滤
+    return;
+  }
+  updateConfigJson();
+});
+$("seqNodes").addEventListener("keydown", (e) => {
+  if (!e.target.matches('[data-k="tag"]')) return;
+  const inp = e.target, menu = menuFor(inp);
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    if (menu && menu.classList.contains("hidden")) openMenu(inp, inp.value);
+    const opts = menuOpts(menu);
+    if (!opts.length) return;
+    e.preventDefault();
+    let i = activeIndex(menu);
+    i = e.key === "ArrowDown" ? (i + 1) % opts.length
+                              : (i <= 0 ? opts.length - 1 : i - 1);
+    setActive(menu, i);
+  } else if (e.key === "Enter") {
+    const opts = menuOpts(menu), i = activeIndex(menu);
+    if (i >= 0 && opts[i]) {
+      e.preventDefault();
+      chooseTag(inp, opts[i].dataset.tag);
+    } else {
+      commitTagInput(inp);
+      closeMenu(inp);
+      inp.blur();
+    }
+  } else if (e.key === "Escape") {
+    e.preventDefault();
+    inp.value = inp.dataset.tag ? bodyLabel(inp.dataset.tag) : "";
+    closeMenu(inp);
+    inp.blur();
+  } else if (e.key === "Tab") {
+    closeMenu(inp);
+  }
+});
+$("seqNodes").addEventListener("focusin", (e) => {
+  if (e.target.matches('[data-k="tag"]')) {
+    e.target.select();
+    openMenu(e.target, "");                   // 聚焦时显示全部
+  }
+});
+$("seqNodes").addEventListener("focusout", (e) => {
+  if (e.target.matches('[data-k="tag"]')) {
+    const pick = e.target.closest(".node-pick");
+    if (!pick || !pick.contains(e.relatedTarget)) closeMenu(e.target);
+  }
+});
+$("seqNodes").addEventListener("mousedown", (e) => {
+  if (e.target.closest(".node-menu .opt[data-tag]")) e.preventDefault();
+});
 $("tofTable").addEventListener("click", (e) => {
   const lb = e.target.closest(".leg-lam");
   if (!lb) return;
@@ -910,9 +1077,61 @@ async function loadSysConfig() {
     $("sysLan").checked = (s.host === "0.0.0.0" || s.host === "::");
     $("sysPort").value = s.port;
     $("sysOpenBrowser").checked = !!s.open_browser;
+    renderEphemerisList(s.ephemeris_options || [], s.ephemerides || []);
+    showEphWarnings(s.ephemeris_options || [], s.ephemerides || []);
+    if (s.ephemeris_span) {
+      $("sysEphT0").value = mjdToDate(s.ephemeris_span[0]);
+      $("sysEphT1").value = mjdToDate(s.ephemeris_span[1]);
+    }
+    $("sysHorizonsResults").innerHTML = "";
+    $("sysHorizonsMsg").textContent = "";
+    $("sysHorizonsDownload").disabled = true;
     const bw = $("sysLanWarnBanner");
     if (bw) bw.classList.toggle("hidden", !$("sysLan").checked);
   } catch (e) { console.error(e); }
+}
+
+/* 外部星历: 扫描结果勾选列表 */
+function renderEphemerisList(opts, chosen) {
+  const box = $("sysEphemList");
+  if (!box) return;
+  const sel = new Set(chosen || []);
+  box.innerHTML = "";
+  if (!opts.length) {
+    box.innerHTML = '<div class="hint">(未发现 *.bsp — 放入 ephemeris/ 后点"重新扫描")</div>';
+    return;
+  }
+  opts.forEach(o => {
+    const mb = (o.size / 1048576).toFixed(1);
+    const ok = !o.warning;
+    const lab = document.createElement("label");
+    lab.className = "ephem-item";
+    lab.innerHTML = `<input type="checkbox" value="${escapeHtml(o.file)}" ` +
+      `${sel.has(o.file) ? "checked" : ""} ${ok ? "" : "disabled"}> ` +
+      `<span class="eph-name">${escapeHtml(o.file)}</span> ` +
+      `<span class="eph-meta">${o.n_bodies} 天体 · ${mb} MB</span>` +
+      `<button class="eph-del" title="删除该星历" data-file="${escapeHtml(o.file)}">✕</button>` +
+      (o.warning ? `<div class="eph-warn">⚠ ${escapeHtml(o.warning)}</div>` : "");
+    box.appendChild(lab);
+  });
+}
+function showEphWarnings(opts, chosen) {
+  const b = $("ephWarnBanner");
+  if (!b) return;
+  const sel = new Set(chosen || []);
+  const bad = (opts || []).filter(o => o.warning && sel.has(o.file));
+  if (!bad.length) {
+    b.textContent = "";
+    b.classList.add("hidden");
+    return;
+  }
+  b.textContent = "⚠ 星历文件异常：" +
+    bad.map(o => `${o.file}（${o.warning}）`).join("；") +
+    "。请取消勾选、删除或重新下载该文件。";
+  b.classList.remove("hidden");
+}
+function selectedEphemerides() {
+  return [...document.querySelectorAll("#sysEphemList input[type=checkbox]:checked")].map(c => c.value);
 }
 
 /* 关于: 懒加载一次 */
@@ -968,6 +1187,113 @@ $("sysOpen").addEventListener("click", async () => {
   $("sysModal").classList.remove("hidden");
 });
 $("aboutOpen").addEventListener("click", openAbout);
+$("sysEphemRescan").addEventListener("click", async () => {
+  try {
+    const r = await fetch("/api/ephemeris/rescan", { method: "POST" });
+    const j = await r.json();
+    if (!r.ok) { alert("扫描失败: " + (j.error || r.statusText)); return; }
+    renderEphemerisList(j.options || [], selectedEphemerides());
+    showEphWarnings(j.options || [], selectedEphemerides());
+    await loadBodies(); refreshPlanetOptions();
+  } catch (e) { alert("扫描失败: " + e.message); }
+});
+$("sysEphemList").addEventListener("click", async (e) => {
+  const b = e.target.closest(".eph-del");
+  if (!b) return;
+  const file = b.dataset.file;
+  if (!confirm("删除星历文件 " + file + " ?")) return;
+  try {
+    const r = await fetch("/api/ephemeris/" + encodeURIComponent(file), { method: "DELETE" });
+    const j = await r.json();
+    if (!r.ok) { alert("删除失败: " + (j.error || r.statusText)); return; }
+    const s = await jfetch("/api/sysconfig");
+    renderEphemerisList(s.ephemeris_options || [], s.ephemerides || []);
+    showEphWarnings(s.ephemeris_options || [], s.ephemerides || []);
+    await loadBodies(); refreshPlanetOptions();
+  } catch (e) { alert("删除失败: " + e.message); }
+});
+
+/* 日期 <-> MJD2000 (2000-01-01 UTC 起算, 与后端一致) */
+function dateToMjd(s) {
+  if (!s) return undefined;
+  return (Date.parse(s + "T00:00:00Z") - Date.UTC(2000, 0, 1)) / 86400000;
+}
+function mjdToDate(m) {
+  return new Date(Date.UTC(2000, 0, 1) + Math.round(m) * 86400000).toISOString().slice(0, 10);
+}
+function renderHorizonsResults(results) {
+  const box = $("sysHorizonsResults");
+  box.innerHTML = "";
+  if (!results.length) { box.innerHTML = '<div class="hint">未找到天体</div>'; return; }
+  results.forEach((c, i) => {
+    const disabled = c.naif == null || !c.horizons;
+    const row = document.createElement("label");
+    row.className = "eph-result" + (disabled ? " disabled" : "");
+    row.dataset.json = JSON.stringify(c);
+    row.innerHTML = `<input type="radio" name="hz" value="${i}" ${disabled ? "disabled" : (i === 0 ? "checked" : "")}> ` +
+      `<span class="eph-name">${escapeHtml(c.label || "")}</span> ` +
+      `<span class="eph-meta">${escapeHtml(c.kind || "")}${c.orbit_class ? " · " + escapeHtml(c.orbit_class) : ""}${disabled ? " · 暂不支持" : ""}</span>`;
+    box.appendChild(row);
+  });
+  $("sysHorizonsDownload").disabled = !results.some(c => c.naif != null && c.horizons);
+}
+$("sysHorizonsSearch").addEventListener("click", async () => {
+  const q = $("sysHorizonsQuery").value.trim();
+  if (!q) return;
+  $("sysHorizonsResults").innerHTML = '<div class="hint">搜索中…</div>';
+  $("sysHorizonsDownload").disabled = true;
+  try {
+    const r = await jfetch("/api/horizons/search?q=" + encodeURIComponent(q));
+    renderHorizonsResults(r.results || []);
+  } catch (e) { $("sysHorizonsResults").innerHTML = `<div class="hint">搜索失败: ${escapeHtml(e.message)}</div>`; }
+});
+async function pollAddTask(tid, onTick) {
+  for (;;) {
+    const t = await jfetch("/api/ephemeris/task/" + encodeURIComponent(tid));
+    if (onTick) onTick(t);
+    if (t.status === "done" || t.status === "error") return t;
+    await new Promise(r => setTimeout(r, 1000));
+  }
+}
+$("sysHorizonsDownload").addEventListener("click", async () => {
+  const sel = document.querySelector('#sysHorizonsResults input[name="hz"]:checked');
+  if (!sel) return;
+  const cand = JSON.parse(sel.closest(".eph-result").dataset.json);
+  const msg = $("sysHorizonsMsg");
+  const btn = $("sysHorizonsDownload");
+  msg.textContent = "提交中…";
+  btn.disabled = true;
+  try {
+    const r = await fetch("/api/ephemeris/add", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        naif: cand.naif, horizons: cand.horizons, name: cand.label,
+        t0: dateToMjd($("sysEphT0").value), t1: dateToMjd($("sysEphT1").value),
+        step: +$("sysEphStep").value || 0,
+      }),
+    });
+    const j = await r.json();
+    if (!r.ok) { msg.textContent = "失败: " + (j.error || r.statusText); return; }
+    const t = await pollAddTask(j.task_id, (s) => {
+      if (s.status === "running") {
+        msg.textContent = (s.mode === "write" ? "写入文件…"
+          : "下载中… (可能需要等待数分钟, 可用「高级」缩小时间跨度)")
+          + (s.total ? ` ${s.done}/${s.total}` : "");
+      }
+    });
+    if (t.status === "error") { msg.textContent = "失败: " + t.error; return; }
+    const res = t.result || {};
+    const chosen = selectedEphemerides();
+    if (res.file && !chosen.includes(res.file)) chosen.push(res.file);
+    const s = await jfetch("/api/sysconfig");
+    renderEphemerisList(s.ephemeris_options || [], chosen);
+    showEphWarnings(s.ephemeris_options || [], chosen);
+    await loadBodies(); refreshPlanetOptions();
+    msg.textContent = `已添加 ${res.file}` + (res.radius_m ? ` (R=${Math.round(res.radius_m)} m)` : "")
+      + (res.warning ? " ⚠ " + res.warning : "");
+  } catch (e) { msg.textContent = "失败: " + e.message; }
+  finally { btn.disabled = false; }
+});
 $("sysClose").addEventListener("click", closeModal);
 $("aboutClose").addEventListener("click", closeModal);
 $("sysSave").addEventListener("click", async () => {
@@ -983,10 +1309,12 @@ $("sysSave").addEventListener("click", async () => {
         host: lan ? "0.0.0.0" : "127.0.0.1",
         port: +$("sysPort").value,
         open_browser: $("sysOpenBrowser").checked,
+        ephemerides: selectedEphemerides(),
       }),
     });
     const j = await r.json();
     if (!r.ok) { alert("保存失败: " + (j.error || r.statusText)); return; }
+    await loadBodies(); refreshPlanetOptions();   // 启用星历立即反映到天体下拉
     alert("已保存。需重启程序后生效 (host/port)。");
     closeModal();
   } catch (e) { alert("保存失败: " + e.message); }
@@ -1015,6 +1343,8 @@ $("sysSave").addEventListener("click", async () => {
   } catch (e) { console.error(e); }
   // 一次性提示: 关标签=后台继续 (可删, 不影响脚本)
   { const ch = $("closeHint"); if (ch) ch.classList.remove("hidden"); }
+  await loadBodies();
+  await loadSysConfig();          // 顶部星历异常横幅 + 设置页列表
   await loadPresets();
   await loadCompCfg();
   await loadJobList();
