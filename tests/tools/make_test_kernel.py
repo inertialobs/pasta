@@ -6,8 +6,8 @@
 - 数据: 近似二体轨道 (J2000 根数), 不是真实精密星历 —— 仅用于功能测试。
 - ``ephemeris/*`` 已被 .gitignore 忽略, 不会入库; 需要时随时可用本脚本重生成:
 
-    python tools/make_test_kernel.py            # 生成 ceres_test.bsp / vesta_test.bsp
-    python tools/make_test_kernel.py --list     # 列出将写入的天体
+    python tests/tools/make_test_kernel.py            # 生成 ceres_test.bsp / vesta_test.bsp
+    python tests/tools/make_test_kernel.py --list     # 列出将写入的天体
 """
 from __future__ import annotations
 

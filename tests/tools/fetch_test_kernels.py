@@ -9,9 +9,9 @@
 
 用法::
 
-    python tools/fetch_test_kernels.py                 # 全部
-    python tools/fetch_test_kernels.py --only ryugu
-    python tools/fetch_test_kernels.py --step 20
+    python tests/tools/fetch_test_kernels.py                 # 全部
+    python tests/tools/fetch_test_kernels.py --only ryugu
+    python tests/tools/fetch_test_kernels.py --step 20
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ import re
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from orbcalc import horizons  # noqa: E402
 

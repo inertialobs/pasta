@@ -8,9 +8,9 @@
 
 用法::
 
-    python tools/verify_kernel.py                      # 校验 ephemeris/ 下全部 kernel
-    python tools/verify_kernel.py ryugu.bsp            # 指定文件
-    python tools/verify_kernel.py --step 7             # 校验采样步长(天), 默认 7
+    python tests/tools/verify_kernel.py                      # 校验 ephemeris/ 下全部 kernel
+    python tests/tools/verify_kernel.py ryugu.bsp            # 指定文件
+    python tests/tools/verify_kernel.py --step 7             # 校验采样步长(天), 默认 7
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from orbcalc import ephem, horizons  # noqa: E402
 
