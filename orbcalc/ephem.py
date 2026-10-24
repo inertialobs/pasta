@@ -33,6 +33,17 @@ def tag_from_name(name) -> str | None:
     return t or None
 
 
+def slugify(text: str) -> str:
+    """文件名用安全 slug (小写、非字母数字转下划线)。"""
+    s = re.sub(r"[^A-Za-z0-9]+", "_", str(text)).strip("_").lower()
+    return s or "body"
+
+
+def short_body_name(label: str) -> str:
+    """去掉前导编号: '162173 Ryugu' -> 'Ryugu'。"""
+    return re.sub(r"^\s*\d+\s+", "", str(label or "")).strip() or str(label or "")
+
+
 # ---------------------------------------------------------------------------
 def _load_sidecar(path: Path):
     """读取同名旁挂 ``<stem>.json``。
@@ -74,6 +85,45 @@ def _sidecar_bodies(side) -> dict[int, dict]:
             continue
         out[nid] = {**val, "naif": nid}
     return out
+
+
+def write_sidecar(path: Path, naif, name, mu_self=None, radius=None,
+                  coverage=None, horizons_cmd=None) -> dict:
+    """写同名单体旁挂 ``<stem>.json``; 返回写入内容。"""
+    side = {
+        "naif": int(naif),
+        "name": name,
+        "mu_self": mu_self,
+        "radius": radius,
+        "safe_radius": (1.05 * radius if radius else 0.0),
+        "coverage": list(coverage) if coverage else None,
+        "horizons": horizons_cmd,
+    }
+    try:
+        path.with_suffix(".json").write_text(
+            json.dumps(side, ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+    return side
+
+
+def unique_kernel_path(dirpath: Path, label: str, naif) -> tuple[str, Path]:
+    """按名字生成 ``<slug>.bsp``; 与不同 NAIF 的同名旁挂冲突时追加 ``_<naif>``。"""
+    short = short_body_name(label) or f"NAIF {naif}"
+    slug = slugify(short) or f"naif_{naif}"
+    path = Path(dirpath) / f"{slug}.bsp"
+    if path.exists():
+        side = _load_sidecar(path)
+        side_naif = None
+        if isinstance(side, dict) and side.get("naif") is not None:
+            try:
+                side_naif = int(side["naif"])
+            except (TypeError, ValueError):
+                side_naif = None
+        if side_naif not in (None, int(naif)):
+            slug = f"{slug}_{naif}"
+            path = Path(dirpath) / f"{slug}.bsp"
+    return slug, path
 
 
 def _valid_naif(nid: int) -> bool:

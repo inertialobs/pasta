@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import signal
 import subprocess
 import sys
@@ -481,23 +480,6 @@ def _subdict(d: dict, fields: set) -> dict:
     return {k: v for k, v in d.items() if k in fields}
 
 
-def _short_body_name(label: str) -> str:
-    """SBDB 显示名去掉前导编号: '162173 Ryugu' -> 'Ryugu'。"""
-    s = re.sub(r"^\s*\d+\s+", "", str(label or "")).strip()
-    return s or str(label or "")
-
-
-def _slug(text: str, fallback: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "_", str(text).lower()).strip("_") or fallback
-
-
-def _sidecar_naif(p: Path):
-    try:
-        return int(json.loads(p.with_suffix(".json").read_text(encoding="utf-8")).get("naif"))
-    except Exception:
-        return None
-
-
 # 外部星历下载任务 (后台线程 + 进度轮询; 下载可能持续数十秒到数分钟)
 _EPH_TASKS: dict = {}
 _EPH_LOCK = threading.Lock()
@@ -530,29 +512,15 @@ def _ephemeris_add_worker(tid, body):
         prev = ephem.file_for_naif(naif)             # 与已有 kernel 取并集 (不丢旧范围)
         if prev and prev.get("coverage"):
             t0, t1 = min(t0, float(prev["coverage"][0])), max(t1, float(prev["coverage"][1]))
+        short = ephem.short_body_name(label) or f"NAIF {naif}"
+        slug, path = ephem.unique_kernel_path(EPHEMERIS_DIR, short, naif)
         _eph_update(tid, mode="fetch")
-        states, ets, meta = horizons.fetch(cmd, t0, t1, step,
-                                           progress=lambda d, n: _eph_update(tid, done=d, total=n))
-        if len(ets) < 8:
-            return _eph_update(tid, status="error", error=f"取到的采样点太少 ({len(ets)})")
-        short = _short_body_name(label) or f"NAIF {naif}"
-        slug = _slug(short, f"naif_{naif}")
-        path = EPHEMERIS_DIR / f"{slug}.bsp"
-        if path.exists() and _sidecar_naif(path) not in (None, naif):
-            slug, path = f"{slug}_{naif}", EPHEMERIS_DIR / f"{slug}_{naif}.bsp"
-        _eph_update(tid, mode="write")
-        horizons.write_spk(path, naif, slug.upper(), states, ets)
-        radius = meta.get("radius")
-        mu = meta.get("mu_self")
-        cov = [(ets[0] + horizons.ET0) / 86400.0, (ets[-1] + horizons.ET0) / 86400.0]
-        side = {"naif": naif, "name": short, "mu_self": mu, "radius": radius,
-                "safe_radius": (1.05 * radius if radius else 0.0),
-                "coverage": cov, "horizons": cmd}
-        try:
-            (EPHEMERIS_DIR / f"{slug}.json").write_text(
-                json.dumps(side, ensure_ascii=False, indent=2), encoding="utf-8")
-        except OSError:
-            pass
+        res = horizons.download(path, naif, cmd, t0, t1, step, segid=slug,
+                                progress=lambda d, n: _eph_update(tid, done=d, total=n))
+        meta = res.get("meta") or {}
+        cov = res["coverage"]
+        ephem.write_sidecar(path, naif, short, meta.get("mu_self"),
+                            meta.get("radius"), cov, cmd)
         ephem.reset_cache()
         files = list(settings["ephemerides"])
         if path.name not in files:
@@ -564,7 +532,7 @@ def _ephemeris_add_worker(tid, body):
         info = ephem.file_for_naif(naif) or {}
         _eph_update(tid, status="done", result={
             "file": path.name, "naif": naif, "name": short, "coverage": cov,
-            "gm_m3s2": mu, "radius_m": radius,
+            "gm_m3s2": meta.get("mu_self"), "radius_m": meta.get("radius"),
             "bodies": [b["name"] for b in info.get("bodies", [])], "warning": warn})
     except Exception as e:
         _eph_update(tid, status="error", error=f"{type(e).__name__}: {e}")

@@ -284,3 +284,23 @@ def test_scan_one_falls_back_to_naif_name(tmp_path, monkeypatch):
 
     assert ephem._scan_one(p)["bodies"][0]["name"] == "NAIF 2469219"
     ephem._loaded.clear()
+
+
+def test_unique_kernel_path_and_sidecar(tmp_path):
+    import json
+
+    from orbcalc import ephem
+
+    p = tmp_path / "ryugu.bsp"
+    p.write_bytes(b"")
+    (tmp_path / "ryugu.json").write_text('{"naif": 2162173}', encoding="utf-8")
+
+    slug, path = ephem.unique_kernel_path(tmp_path, "162173 Ryugu", 2162173)
+    assert slug == "ryugu" and path == p
+
+    slug2, path2 = ephem.unique_kernel_path(tmp_path, "162173 Ryugu", 999)
+    assert slug2 == "ryugu_999" and path2.name == "ryugu_999.bsp"
+
+    side = ephem.write_sidecar(p, 2162173, "Ryugu", 3e9, 448.0, [0, 10], "162173;")
+    assert side["safe_radius"] == pytest.approx(470.4)
+    assert json.loads((tmp_path / "ryugu.json").read_text(encoding="utf-8"))["coverage"] == [0, 10]

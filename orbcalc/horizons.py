@@ -210,6 +210,19 @@ def write_spk(path: Path, naif: int, segid: str, states, ets) -> None:
         sp.spkcls(handle)
 
 
+def download(path, naif, cmd, t0, t1, step, segid=None, progress=None) -> dict:
+    """取数并写出 SPK (Type 9); 返回 ``{file,path,coverage,meta,n_points}``。"""
+    states, ets, meta = fetch(cmd, t0, t1, step, progress=progress)
+    if len(ets) < 8:
+        raise ValueError(f"取到的采样点太少 ({len(ets)})")
+    path = Path(path)
+    segid = (segid or path.stem).upper()
+    write_spk(path, int(naif), segid, states, ets)
+    cov = [(ets[0] + ET0) / 86400.0, (ets[-1] + ET0) / 86400.0]
+    return {"file": path.name, "path": path, "coverage": cov,
+            "meta": meta, "n_points": len(ets)}
+
+
 DEFAULT_YEARS = (1950, 2050)         # 默认取数范围 (年)
 
 
