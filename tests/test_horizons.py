@@ -99,7 +99,10 @@ def eph_client(monkeypatch, tmp_path):
     monkeypatch.setattr(ephem, "dir_path", lambda: tmp_path)
     monkeypatch.setattr(web, "settings", _StubSettings(ephemerides=[]))
 
+    calls = []
+
     def fake_fetch(cmd, t0, t1, step, progress=None):
+        calls.append((float(t0), float(t1), float(step)))
         n = 20
         ets = [(float(t0) + i) * 86400.0 - horizons.ET0 for i in range(n)]
         states = np.tile([1.0e8, 2.0e7, 0.0, -5.0, 29.0, 1.0], (n, 1))
@@ -109,7 +112,9 @@ def eph_client(monkeypatch, tmp_path):
 
     monkeypatch.setattr(horizons, "fetch", fake_fetch)
     ephem.reset_cache()
-    yield web.app.test_client(), tmp_path
+    client = web.app.test_client()
+    client.fetch_calls = calls
+    yield client, tmp_path
     ephem.reset_cache()
 
 
@@ -130,8 +135,7 @@ def test_add_and_delete_ephemeris(eph_client):
 
     client, tmp = eph_client
     r = client.post("/api/ephemeris/add", json={
-        "naif": 2162173, "horizons": "162173;", "name": "162173 Ryugu",
-        "t0": 4000.0, "t1": 4100.0, "step": 5.0})
+        "naif": 2162173, "horizons": "162173;", "name": "162173 Ryugu"})
     assert r.status_code == 202, r.get_json()
     tid = r.get_json()["task_id"]
     for _ in range(100):
@@ -140,6 +144,7 @@ def test_add_and_delete_ephemeris(eph_client):
             break
         time.sleep(0.05)
     assert t["status"] == "done", t
+    assert client.fetch_calls[-1][2] == pytest.approx(8.0)   # 与 de440s 对齐的固定步长
     j = t["result"]
     assert (tmp / j["file"]).is_file()
     assert (tmp / (j["file"][:-4] + ".json")).is_file()

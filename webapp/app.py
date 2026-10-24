@@ -504,7 +504,7 @@ def _ephemeris_add_worker(tid, body):
             naif, cmd, label = cand["naif"], cand["horizons"], cand["label"]
         naif = int(naif)
         t0, t1 = horizons.default_span()
-        step = float(body.get("step") or 0) or max(3.0, min(5.0, (t1 - t0) / 6000.0))
+        step = horizons.DOWNLOAD_STEP_DAYS
 
         hits = ephem.kernels_for_naif(naif)
         table = next((k for k in hits if len(k["bodies"]) > 1), None)
@@ -660,6 +660,7 @@ def create_app() -> Flask:
         out["path"] = os.path.abspath(CONFIG_FILE)
         out["ephemeris_options"] = ephem.options()
         out["ephemeris_span"] = list(horizons.default_span())
+        out["ephemeris_step"] = horizons.DOWNLOAD_STEP_DAYS
         return jsonify(out)
 
     @app.post("/api/sysconfig")

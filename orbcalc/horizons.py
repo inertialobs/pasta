@@ -29,6 +29,7 @@ SBDB_API = "https://ssd-api.jpl.nasa.gov/sbdb.api"
 HORIZONS_API = "https://ssd.jpl.nasa.gov/api/horizons.api"
 MAX_RECORDS = 4000                       # 单次 Horizons 请求的最大采样点数
 DEGREE = 9                               # SPK Type 9 Lagrange 阶数 (高阶层数对近日点高速段很关键)
+DOWNLOAD_STEP_DAYS = 8.0                 # 下载固定步长 (与 de440s 的 8 天分段对齐)
 
 _NUM = re.compile(r"[-+]?\d+\.\d+(?:[Ee][-+]?\d+)?")
 _SAFE_CMD = re.compile(r"^[0-9A-Za-z ;._\-]+$")
@@ -234,7 +235,8 @@ def write_spk(path: Path, naif: int, segid: str, states, ets) -> None:
         sp.spkcls(handle)
 
 
-def download(path, naif, cmd, t0, t1, step, segid=None, progress=None) -> dict:
+def download(path, naif, cmd, t0, t1, step=DOWNLOAD_STEP_DAYS, segid=None,
+             progress=None) -> dict:
     """取数并写出 SPK (Type 9); 返回 ``{file,path,coverage,meta,n_points}``。"""
     states, ets, meta = fetch(cmd, t0, t1, step, progress=progress)
     if len(ets) < 8:

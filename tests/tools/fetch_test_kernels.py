@@ -41,13 +41,13 @@ def main():
     ap = argparse.ArgumentParser(description="从 JPL Horizons 生成小天体测试 SPK")
     ap.add_argument("--outdir", default="ephemeris")
     ap.add_argument("--only", default=None)
-    ap.add_argument("--step", type=float, default=0.0, help="采样步长(天); 0=自适应")
+    ap.add_argument("--step", type=float, default=8.0, help="采样步长(天)")
     args = ap.parse_args()
 
     out = Path(args.outdir)
     out.mkdir(parents=True, exist_ok=True)
     t0, t1 = horizons.default_span()
-    step = args.step or max(3.0, min(5.0, (t1 - t0) / 6000.0))
+    step = args.step
     items = TARGETS.items() if not args.only else [(args.only, TARGETS[args.only])]
     for name, (naif, cmd) in items:
         try:

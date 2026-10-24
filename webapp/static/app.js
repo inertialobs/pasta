@@ -1255,7 +1255,6 @@ $("sysHorizonsDownload").addEventListener("click", async () => {
   try {
     const payload = {
       naif: cand.naif, horizons: cand.horizons, name: cand.label,
-      step: +$("sysEphStep").value || 0,
     };
     const post = (overwrite) => fetch("/api/ephemeris/add", {
       method: "POST", headers: { "Content-Type": "application/json" },
