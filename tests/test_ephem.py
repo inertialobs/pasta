@@ -270,3 +270,17 @@ def test_options_includes_warning(monkeypatch):
             "sidecar": None, "warning": "bad"}
     monkeypatch.setattr(ephem, "scan", lambda *a, **k: [kern])
     assert ephem.options()[0]["warning"] == "bad"
+
+
+def test_scan_one_falls_back_to_naif_name(tmp_path, monkeypatch):
+    import pykep as pk
+
+    from orbcalc import ephem
+
+    p = tmp_path / "unnamed.bsp"
+    p.write_bytes(b"")
+    monkeypatch.setattr(pk.utils, "inspect_spice_kernel", lambda _p: [2469219])
+    monkeypatch.setattr(pk.utils, "extract_coverage_window", _no_cover)
+
+    assert ephem._scan_one(p)["bodies"][0]["name"] == "NAIF 2469219"
+    ephem._loaded.clear()

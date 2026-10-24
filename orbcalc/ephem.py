@@ -18,12 +18,6 @@ from pathlib import Path
 
 DIRNAME = "ephemeris"
 
-# 名称补充: pykep 内置 NAIF 字典未收录、但常见的小天体 (NAIF id -> 名)
-EXTRA_NAMES = {
-    2469219: "KAMOOALEWA",     # (469219) Kamo'oalewa, 天问-2 目标
-    2486958: "ARROKOTH",       # 已在 pykep 表, 便于说明可省略
-}
-
 _scan_cache: list | None = None
 _active: list[str] = []
 _loaded: set[str] = set()
@@ -115,9 +109,7 @@ def _scan_one(path: Path) -> dict:
                 name = pk.utils.naifid2name(nid)
             except Exception:
                 name = None
-        if not name or name == "Not Found":        # pykep 字典未收录 -> 我们补充
-            name = EXTRA_NAMES.get(nid)
-        if not name:
+        if not name or name == "Not Found":        # pykep 字典未收录 -> NAIF 兜底
             name = f"NAIF {nid}"
         body = {"naif": nid, "name": name}
         for key in ("mu_self", "radius", "safe_radius"):
