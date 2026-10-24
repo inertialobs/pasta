@@ -143,7 +143,7 @@ def body_info(tag):
     note = ""
     if kfile is not None:
         no_phys = float(spec.get("mu_self") or 0.0) <= 0 and float(spec.get("radius") or 0.0) <= 0
-        note = "外部星历 (kernel, 无 μ/半径: 仅定时路点)" if no_phys else "外部星历 (kernel)"
+        note = "μ = 0" if no_phys else "外部星历"
     return {"label": _display(spec.get("name"), tag),
             "note": note,
             "builtin": kfile is None,

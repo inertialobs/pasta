@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import urllib.error
+
 import numpy as np
 import pytest
 
@@ -194,3 +196,76 @@ def test_add_rejects_table(eph_client, monkeypatch):
         "naif": 2000001, "horizons": "1;", "name": "1 Ceres"})
     assert r.status_code == 409
     assert "sb441-n16.bsp" in r.get_json()["error"]
+
+
+class _Resp:
+    def __init__(self, data=b"ok"):
+        self._data = data
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def read(self):
+        return self._data
+
+
+def test_get_retries_transient_then_succeeds(monkeypatch):
+    from orbcalc import horizons
+
+    calls = []
+
+    def fake(url, timeout=None):
+        calls.append(url)
+        if len(calls) < 3:
+            raise urllib.error.URLError("boom")
+        return _Resp(b"ok")
+
+    monkeypatch.setattr(horizons.urllib.request, "urlopen", fake)
+    monkeypatch.setattr(horizons.time, "sleep", lambda _s: None)
+    assert horizons._get("http://x") == "ok"
+    assert len(calls) == 3
+
+
+def test_get_4xx_fails_immediately(monkeypatch):
+    from orbcalc import horizons
+
+    calls = []
+
+    def fake(url, timeout=None):
+        calls.append(url)
+        raise urllib.error.HTTPError(url, 400, "bad", None, None)
+
+    monkeypatch.setattr(horizons.urllib.request, "urlopen", fake)
+    with pytest.raises(urllib.error.HTTPError):
+        horizons._get("http://x")
+    assert len(calls) == 1
+
+
+def test_get_fails_after_three_transient_errors(monkeypatch):
+    from orbcalc import horizons
+
+    calls = []
+
+    def fake(url, timeout=None):
+        calls.append(url)
+        raise urllib.error.URLError("boom")
+
+    monkeypatch.setattr(horizons.urllib.request, "urlopen", fake)
+    monkeypatch.setattr(horizons.time, "sleep", lambda _s: None)
+    with pytest.raises(RuntimeError, match="已重试 3 次"):
+        horizons._get("http://x")
+    assert len(calls) == 3
+
+
+def test_fetch_wraps_chunk_error(monkeypatch):
+    from orbcalc import horizons
+
+    def boom(*_a):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(horizons, "_get_vectors", boom)
+    with pytest.raises(RuntimeError, match="第 1/1 段请求失败"):
+        horizons.fetch("1;", 0, 100, 5)

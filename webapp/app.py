@@ -521,9 +521,10 @@ def _ephemeris_add_worker(tid, body):
             slug = path.stem
         else:
             slug, path = ephem.unique_kernel_path(EPHEMERIS_DIR, short, naif)
-        _eph_update(tid, mode="fetch")
+        _eph_update(tid, mode="connect", done=0, total=0)
         res = horizons.download(path, naif, cmd, t0, t1, step, segid=slug,
-                                progress=lambda d, n: _eph_update(tid, done=d, total=n))
+                                progress=lambda d, n: _eph_update(
+                                    tid, mode="fetch", done=d, total=n))
         meta = res.get("meta") or {}
         cov = res["coverage"]
         ephem.write_sidecar(path, naif, short, meta.get("mu_self"),

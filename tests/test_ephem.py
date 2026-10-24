@@ -158,7 +158,7 @@ def test_moonless_barycenter_aliases_to_builtin(kernel_dir):
     assert planets.body_info("VENUS")["builtin"] is True
     assert planets.body_info("VENUS_BARYCENTER") is None
     assert planets.body_info("MOON")["builtin"] is False
-    assert "无 μ/半径" in planets.body_info("MOON")["note"]
+    assert "μ = 0" in planets.body_info("MOON")["note"]
 
 
 def test_sidecar_bodies_old_and_multi():

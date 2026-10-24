@@ -1250,7 +1250,7 @@ $("sysHorizonsDownload").addEventListener("click", async () => {
   const cand = JSON.parse(sel.closest(".eph-result").dataset.json);
   const msg = $("sysHorizonsMsg");
   const btn = $("sysHorizonsDownload");
-  msg.textContent = "提交中…";
+  msg.textContent = "连接中…";
   btn.disabled = true;
   try {
     const payload = {
@@ -1264,7 +1264,7 @@ $("sysHorizonsDownload").addEventListener("click", async () => {
     let r = await post(false);
     let j = await r.json();
     if (r.status === 409 && j.can_overwrite) {
-      if (!confirm(`${j.error}\n\n覆盖会重新下载 1849–2150 全窗口。`)) {
+      if (!confirm(`${j.error}\n\n覆盖会重新下载完整时间窗口，是否继续？`)) {
         msg.textContent = "已取消";
         return;
       }
@@ -1274,9 +1274,7 @@ $("sysHorizonsDownload").addEventListener("click", async () => {
     if (!r.ok) { msg.textContent = "失败: " + (j.error || r.statusText); return; }
     const t = await pollAddTask(j.task_id, (s) => {
       if (s.status === "running") {
-        msg.textContent = (s.mode === "write" ? "写入文件…"
-          : "下载中… (固定 1849–2150 全窗口, 可能需要数分钟)")
-          + (s.total ? ` ${s.done}/${s.total}` : "");
+        msg.textContent = s.total ? `下载中 (${s.done}/${s.total})…` : "连接中…";
       }
     });
     if (t.status === "error") { msg.textContent = "失败: " + t.error; return; }

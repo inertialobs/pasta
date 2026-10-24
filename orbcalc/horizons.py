@@ -13,6 +13,8 @@ from __future__ import annotations
 import json
 import math
 import re
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -47,9 +49,26 @@ def _floats(line: str) -> list[float]:
     return [float(x) for x in _NUM.findall(line)]
 
 
-def _get(url: str, timeout: int = 120) -> str:
-    with urllib.request.urlopen(url, timeout=timeout) as r:
-        return r.read().decode("utf-8", "replace")
+_RETRY_ATTEMPTS = 3
+_RETRY_DELAYS = (1.0, 2.0)
+
+
+def _get(url: str, timeout: int = 120, attempts: int = _RETRY_ATTEMPTS) -> str:
+    """HTTP GET: 瞬时错误重试 attempts 次; HTTP 4xx 立即失败。"""
+    last = None
+    for i in range(attempts):
+        try:
+            with urllib.request.urlopen(url, timeout=timeout) as r:
+                return r.read().decode("utf-8", "replace")
+        except urllib.error.HTTPError as e:
+            last = e
+            if 400 <= e.code < 500:          # 含 429: 不重试
+                raise
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            last = e
+        if i + 1 < attempts:
+            time.sleep(_RETRY_DELAYS[min(i, len(_RETRY_DELAYS) - 1)])
+    raise RuntimeError(f"Horizons 请求失败（已重试 {attempts} 次）: {last}")
 
 
 # ---------------------------------------------------------------------------
@@ -164,7 +183,10 @@ def fetch(cmd: str, t0_mjd: float, t1_mjd: float, step_d: float, progress=None):
     edges = np.linspace(t0_mjd, t1_mjd, nch + 1)
     states, ets, meta = [], [], None
     for i in range(nch):
-        text = _get_vectors(cmd, float(edges[i]), float(edges[i + 1]), step_d)
+        try:
+            text = _get_vectors(cmd, float(edges[i]), float(edges[i + 1]), step_d)
+        except Exception as e:
+            raise RuntimeError(f"Horizons 第 {i + 1}/{nch} 段请求失败: {e}") from e
         if meta is None:
             meta = parse_header(text)
         s, e = _parse_vectors(text)
