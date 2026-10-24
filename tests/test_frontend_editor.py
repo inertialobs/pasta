@@ -274,6 +274,12 @@ def test_default_preset_falls_back_to_first_when_absent(page, live_server):
     assert read_config(page)["seq"] == ["EARTH", "MARS"]
 
 
+def _open_ephemeris(page):
+    page.locator("#sysOpen").click()
+    page.wait_for_selector("#sysModal:not(.hidden)")
+    page.locator('#sysModal .side-item[data-pane="ephemeris"]').click()
+
+
 def test_kernel_bodies_and_ephemeris_settings(page, live_server):
     import copy
 
@@ -326,8 +332,10 @@ def test_kernel_bodies_and_ephemeris_settings(page, live_server):
     tag_input.press("Enter")
     assert tag_input.get_attribute("data-tag") == "MARS"
 
-    page.locator("#sysOpen").click()
+    _open_ephemeris(page)
     page.wait_for_selector("#sysEphemList .ephem-item")
+    assert page.locator("#mpaneEphemeris").is_visible()
+    assert page.locator("#mpaneSettings").is_hidden()
     text = page.locator("#sysEphemList").inner_text()
     assert "ceres_test.bsp" in text and "1 天体" in text
     assert page.locator("#sysEphemList input[type=checkbox]").first.is_checked()
@@ -370,7 +378,7 @@ def test_ephemeris_warning_banner_and_disabled_checkbox(page, live_server):
     banner = page.locator("#ephWarnBanner").inner_text()
     assert "bad.bsp" in banner and "1129403230" in banner
 
-    page.locator("#sysOpen").click()
+    _open_ephemeris(page)
     page.wait_for_selector("#sysEphemList .ephem-item")
     bad_cb = page.locator('#sysEphemList input[value="bad.bsp"]')
     assert bad_cb.is_checked() and bad_cb.is_disabled()
@@ -411,7 +419,7 @@ def test_ephemeris_warning_no_banner_when_not_enabled(page, live_server):
     page.wait_for_selector("#sysEphemList .ephem-item", state="attached")
     assert page.locator("#ephWarnBanner").is_hidden()   # 之前没勾选 -> 不提示
 
-    page.locator("#sysOpen").click()
+    _open_ephemeris(page)
     page.wait_for_selector("#sysEphemList .ephem-item")
     cb = page.locator('#sysEphemList input[value="bad.bsp"]')
     assert cb.is_disabled() and not cb.is_checked()     # 不可选, 但设置页仍有内联警告
@@ -470,7 +478,7 @@ def test_add_body_search_download_and_delete(page, live_server):
     page.goto(live_server)
     page.wait_for_selector("#seqNodes .node-row")
 
-    page.locator("#sysOpen").click()
+    _open_ephemeris(page)
     page.locator("#sysHorizonsQuery").fill("Ryugu")
     page.locator("#sysHorizonsSearch").click()
     page.wait_for_selector("#sysHorizonsResults .eph-result")

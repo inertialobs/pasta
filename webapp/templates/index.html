@@ -164,6 +164,7 @@
   <div class="modal-box paneled">
     <aside class="modal-side">
       <button class="side-item active" data-pane="settings">系统设置</button>
+      <button class="side-item" data-pane="ephemeris">外部星历</button>
       <button class="side-item" data-pane="about">关于</button>
     </aside>
     <div class="modal-body">
@@ -180,8 +181,15 @@
           <label><input type="checkbox" id="sysOpenBrowser"> 启动时自动打开浏览器</label>
         </div>
         <p class="hint">port=0 表示随机空闲端口。改动保存后需重启程序生效。</p>
-        <hr class="sep">
-        <label class="ephem-head">外部星历 (ephemeris/)</label>
+        <div class="actions">
+          <button id="sysSave" class="primary">保存</button>
+          <button id="sysClose" class="ghost">取消</button>
+        </div>
+      </div>
+
+      <!-- ---- 外部星历 ---- -->
+      <div id="mpaneEphemeris" class="mpane">
+        <h3>外部星历 (ephemeris/)</h3>
         <div id="sysEphemList" class="ephem-list"></div>
         <p class="hint">把 *.bsp 星历文件放入程序目录的 ephemeris/ 下, 勾选启用</p>
         <div class="actions">
@@ -199,8 +207,8 @@
         </div>
         <p class="hint" id="sysHorizonsMsg"></p>
         <div class="actions">
-          <button id="sysSave" class="primary">保存</button>
-          <button id="sysClose" class="ghost">取消</button>
+          <button id="sysEphSave" class="primary">保存</button>
+          <button id="sysEphClose" class="ghost">取消</button>
         </div>
       </div>
 

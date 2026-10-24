@@ -1067,6 +1067,7 @@ function showModalPane(pane) {
   document.querySelectorAll("#sysModal .side-item").forEach(b =>
     b.classList.toggle("active", b.dataset.pane === pane));
   $("mpaneSettings").classList.toggle("active", pane === "settings");
+  $("mpaneEphemeris").classList.toggle("active", pane === "ephemeris");
   $("mpaneAbout").classList.toggle("active", pane === "about");
 }
 function closeModal() { $("sysModal").classList.add("hidden"); }
@@ -1304,16 +1305,29 @@ $("sysSave").addEventListener("click", async () => {
         host: lan ? "0.0.0.0" : "127.0.0.1",
         port: +$("sysPort").value,
         open_browser: $("sysOpenBrowser").checked,
-        ephemerides: selectedEphemerides(),
       }),
     });
     const j = await r.json();
     if (!r.ok) { alert("保存失败: " + (j.error || r.statusText)); return; }
-    await loadBodies(); refreshPlanetOptions();   // 启用星历立即反映到天体下拉
     alert("已保存。需重启程序后生效 (host/port)。");
     closeModal();
   } catch (e) { alert("保存失败: " + e.message); }
 });
+$("sysEphSave").addEventListener("click", async () => {
+  try {
+    const r = await fetch("/api/sysconfig", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ephemerides: selectedEphemerides() }),
+    });
+    const j = await r.json();
+    if (!r.ok) { alert("保存失败: " + (j.error || r.statusText)); return; }
+    await loadBodies(); refreshPlanetOptions();   // 启用星历立即反映到天体下拉
+    alert("已保存");
+    closeModal();
+  } catch (e) { alert("保存失败: " + e.message); }
+});
+$("sysEphClose").addEventListener("click", closeModal);
 
 /* ============================================================
  * 初始化
