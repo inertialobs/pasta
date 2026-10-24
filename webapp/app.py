@@ -503,17 +503,24 @@ def _ephemeris_add_worker(tid, body):
                 return _eph_update(tid, status="error", error="无法解析该天体 (未编号小天体暂不支持)")
             naif, cmd, label = cand["naif"], cand["horizons"], cand["label"]
         naif = int(naif)
-        d0, d1 = horizons.default_span()
-        t0 = float(body.get("t0", d0)); t1 = float(body.get("t1", d1))
-        if t1 <= t0:
-            return _eph_update(tid, status="error", error="结束时间需晚于开始时间")
-        span = t1 - t0
-        step = float(body.get("step") or 0) or max(3.0, min(5.0, span / 6000.0))
-        prev = ephem.file_for_naif(naif)             # 与已有 kernel 取并集 (不丢旧范围)
-        if prev and prev.get("coverage"):
-            t0, t1 = min(t0, float(prev["coverage"][0])), max(t1, float(prev["coverage"][1]))
+        t0, t1 = horizons.default_span()
+        step = float(body.get("step") or 0) or max(3.0, min(5.0, (t1 - t0) / 6000.0))
+
+        hits = ephem.kernels_for_naif(naif)
+        table = next((k for k in hits if len(k["bodies"]) > 1), None)
+        if table:
+            return _eph_update(tid, status="error", error=(
+                f"该天体已在星表 {table['file']} 中，无需单独下载"))
+        single = next((k for k in hits if len(k["bodies"]) == 1), None)
         short = ephem.short_body_name(label) or f"NAIF {naif}"
-        slug, path = ephem.unique_kernel_path(EPHEMERIS_DIR, short, naif)
+        if single:
+            if not body.get("overwrite"):
+                return _eph_update(tid, status="error", error=(
+                    f"已存在 {single['file']}，请确认覆盖后重试"))
+            path = EPHEMERIS_DIR / single["file"]
+            slug = path.stem
+        else:
+            slug, path = ephem.unique_kernel_path(EPHEMERIS_DIR, short, naif)
         _eph_update(tid, mode="fetch")
         res = horizons.download(path, naif, cmd, t0, t1, step, segid=slug,
                                 progress=lambda d, n: _eph_update(tid, done=d, total=n))
@@ -698,6 +705,24 @@ def create_app() -> Flask:
     def ephemeris_add():
         """启动后台下载任务 (Horizons 抓取可能较久), 返回 task_id 供轮询进度。"""
         body = request.get_json(force=True, silent=True) or {}
+        naif = body.get("naif")
+        if naif is not None:
+            try:
+                naif_i = int(naif)
+            except (TypeError, ValueError):
+                naif_i = None
+            if naif_i is not None:
+                hits = ephem.kernels_for_naif(naif_i)
+                table = next((k for k in hits if len(k["bodies"]) > 1), None)
+                single = next((k for k in hits if len(k["bodies"]) == 1), None)
+                if table:
+                    return jsonify({"error": (
+                        f"该天体已在星表 {table['file']} 中，无需单独下载")}), 409
+                if single and not body.get("overwrite"):
+                    return jsonify({"error": (
+                        f"已存在 {single['file']}，是否覆盖？"),
+                        "existing": single["file"],
+                        "can_overwrite": True}), 409
         tid = uuid.uuid4().hex
         with _EPH_LOCK:
             _EPH_TASKS[tid] = {"status": "running", "mode": "start", "done": 0, "total": 0}

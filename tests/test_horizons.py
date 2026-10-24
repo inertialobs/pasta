@@ -153,3 +153,44 @@ def test_add_and_delete_ephemeris(eph_client):
     assert d.status_code == 200
     assert not (tmp / j["file"]).exists()
     assert "RYUGU" not in planets.known_tags()
+
+
+def _add_and_wait(client, **body):
+    import time
+
+    r = client.post("/api/ephemeris/add", json=body)
+    assert r.status_code == 202, r.get_json()
+    tid = r.get_json()["task_id"]
+    for _ in range(100):
+        t = client.get(f"/api/ephemeris/task/{tid}").get_json()
+        if t.get("status") in ("done", "error"):
+            return t
+        time.sleep(0.05)
+    return t
+
+
+def test_add_overwrite_flow(eph_client):
+    client, _ = eph_client
+    body = {"naif": 2162173, "horizons": "162173;", "name": "162173 Ryugu"}
+    assert _add_and_wait(client, **body)["status"] == "done"
+
+    r = client.post("/api/ephemeris/add", json=body)
+    assert r.status_code == 409
+    j = r.get_json()
+    assert j.get("can_overwrite") and j.get("existing") == "ryugu.bsp"
+
+    assert _add_and_wait(client, **{**body, "overwrite": True})["status"] == "done"
+
+
+def test_add_rejects_table(eph_client, monkeypatch):
+    from orbcalc import ephem
+
+    client, _ = eph_client
+    monkeypatch.setattr(ephem, "kernels_for_naif",
+                        lambda naif: [{"file": "sb441-n16.bsp",
+                                       "bodies": [{"naif": naif}, {"naif": 2}],
+                                       "warning": None}])
+    r = client.post("/api/ephemeris/add", json={
+        "naif": 2000001, "horizons": "1;", "name": "1 Ceres"})
+    assert r.status_code == 409
+    assert "sb441-n16.bsp" in r.get_json()["error"]

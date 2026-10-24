@@ -19,6 +19,8 @@ from pathlib import Path
 
 import numpy as np
 
+from . import MJD2000_MAX, MJD2000_MIN
+
 J2000_JD = 2451545.0
 ET0 = 43135.816087188054                  # et = mjd2000*86400 - ET0 (pykep mjd2000 定义)
 SBDB_API = "https://ssd-api.jpl.nasa.gov/sbdb.api"
@@ -223,12 +225,6 @@ def download(path, naif, cmd, t0, t1, step, segid=None, progress=None) -> dict:
             "meta": meta, "n_points": len(ets)}
 
 
-DEFAULT_YEARS = (1950, 2050)         # 默认取数范围 (年)
-
-
 def default_span():
-    """默认取数跨度 (mjd2000): 1950-01-01 .. 2050-01-01。"""
-    from datetime import date
-    base = date(2000, 1, 1)
-    y0, y1 = DEFAULT_YEARS
-    return float((date(y0, 1, 1) - base).days), float((date(y1, 1, 1) - base).days)
+    """固定取数窗口 (mjd2000): de440s 覆盖 1849-12-25 .. 2150-01-21。"""
+    return float(MJD2000_MIN), float(MJD2000_MAX)

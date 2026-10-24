@@ -16,6 +16,8 @@ import json
 import re
 from pathlib import Path
 
+from . import MJD2000_MAX, MJD2000_MIN
+
 DIRNAME = "ephemeris"
 
 _scan_cache: list | None = None
@@ -180,7 +182,13 @@ def _scan_one(path: Path) -> dict:
                 cov = (a, b) if cov is None else (min(cov[0], a), max(cov[1], b))
     if side and isinstance(side.get("coverage"), (list, tuple)) and len(side["coverage"]) == 2:
         cov = (float(side["coverage"][0]), float(side["coverage"][1]))
+    if cov is not None:                        # 统一裁剪到 de440s 窗口
+        a = max(float(cov[0]), MJD2000_MIN)
+        b = min(float(cov[1]), MJD2000_MAX)
+        cov = (a, b) if a <= b else None
     info["coverage"] = cov
+    info["partial"] = cov is None or (cov[0] > MJD2000_MIN + 1.0
+                                      or cov[1] < MJD2000_MAX - 1.0)
     return info
 
 
@@ -201,6 +209,13 @@ def file_for_naif(naif) -> dict | None:
     return None
 
 
+def kernels_for_naif(naif) -> list:
+    """所有包含该 NAIF 的可用 kernel (跳过可疑 warning)。"""
+    return [k for k in scan()
+            if not k.get("warning")
+            and any(int(b["naif"]) == int(naif) for b in k["bodies"])]
+
+
 def scan(force: bool = False) -> list:
     """扫描 ``ephemeris/*.bsp`` -> [{file,size,bodies,coverage}]; 结果缓存。"""
     global _scan_cache
@@ -217,10 +232,11 @@ def scan(force: bool = False) -> list:
 
 
 def options() -> list:
-    """供设置页: [{file,size,n_bodies,coverage,warning}]。"""
+    """供设置页: [{file,size,n_bodies,coverage,partial,warning}]。"""
     return [{"file": k["file"], "size": k["size"],
              "n_bodies": 0 if k.get("warning") else len(k["bodies"]),
-             "coverage": k["coverage"], "warning": k.get("warning")} for k in scan()]
+             "coverage": k["coverage"], "partial": k.get("partial", False),
+             "warning": k.get("warning")} for k in scan()]
 
 
 def reset_cache() -> None:

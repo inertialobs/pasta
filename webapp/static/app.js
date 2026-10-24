@@ -1079,10 +1079,6 @@ async function loadSysConfig() {
     $("sysOpenBrowser").checked = !!s.open_browser;
     renderEphemerisList(s.ephemeris_options || [], s.ephemerides || []);
     showEphWarnings(s.ephemeris_options || [], s.ephemerides || []);
-    if (s.ephemeris_span) {
-      $("sysEphT0").value = mjdToDate(s.ephemeris_span[0]);
-      $("sysEphT1").value = mjdToDate(s.ephemeris_span[1]);
-    }
     $("sysHorizonsResults").innerHTML = "";
     $("sysHorizonsMsg").textContent = "";
     $("sysHorizonsDownload").disabled = true;
@@ -1111,6 +1107,7 @@ function renderEphemerisList(opts, chosen) {
       `<span class="eph-name">${escapeHtml(o.file)}</span> ` +
       `<span class="eph-meta">${o.n_bodies} 天体 · ${mb} MB</span>` +
       `<button class="eph-del" title="删除该星历" data-file="${escapeHtml(o.file)}">✕</button>` +
+      (o.partial ? `<div class="eph-warn">⚠ 覆盖期不足 1849–2150（超出部分任务可能失败）</div>` : "") +
       (o.warning ? `<div class="eph-warn">⚠ ${escapeHtml(o.warning)}</div>` : "");
     box.appendChild(lab);
   });
@@ -1213,14 +1210,6 @@ $("sysEphemList").addEventListener("click", async (e) => {
   } catch (e) { alert("删除失败: " + e.message); }
 });
 
-/* 日期 <-> MJD2000 (2000-01-01 UTC 起算, 与后端一致) */
-function dateToMjd(s) {
-  if (!s) return undefined;
-  return (Date.parse(s + "T00:00:00Z") - Date.UTC(2000, 0, 1)) / 86400000;
-}
-function mjdToDate(m) {
-  return new Date(Date.UTC(2000, 0, 1) + Math.round(m) * 86400000).toISOString().slice(0, 10);
-}
 function renderHorizonsResults(results) {
   const box = $("sysHorizonsResults");
   box.innerHTML = "";
@@ -1264,20 +1253,29 @@ $("sysHorizonsDownload").addEventListener("click", async () => {
   msg.textContent = "提交中…";
   btn.disabled = true;
   try {
-    const r = await fetch("/api/ephemeris/add", {
+    const payload = {
+      naif: cand.naif, horizons: cand.horizons, name: cand.label,
+      step: +$("sysEphStep").value || 0,
+    };
+    const post = (overwrite) => fetch("/api/ephemeris/add", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        naif: cand.naif, horizons: cand.horizons, name: cand.label,
-        t0: dateToMjd($("sysEphT0").value), t1: dateToMjd($("sysEphT1").value),
-        step: +$("sysEphStep").value || 0,
-      }),
+      body: JSON.stringify({ ...payload, overwrite: !!overwrite }),
     });
-    const j = await r.json();
+    let r = await post(false);
+    let j = await r.json();
+    if (r.status === 409 && j.can_overwrite) {
+      if (!confirm(`${j.error}\n\n覆盖会重新下载 1849–2150 全窗口。`)) {
+        msg.textContent = "已取消";
+        return;
+      }
+      r = await post(true);
+      j = await r.json();
+    }
     if (!r.ok) { msg.textContent = "失败: " + (j.error || r.statusText); return; }
     const t = await pollAddTask(j.task_id, (s) => {
       if (s.status === "running") {
         msg.textContent = (s.mode === "write" ? "写入文件…"
-          : "下载中… (可能需要等待数分钟, 可用「高级」缩小时间跨度)")
+          : "下载中… (固定 1849–2150 全窗口, 可能需要数分钟)")
           + (s.total ? ` ${s.done}/${s.total}` : "");
       }
     });

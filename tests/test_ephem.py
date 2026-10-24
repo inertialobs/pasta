@@ -304,3 +304,38 @@ def test_unique_kernel_path_and_sidecar(tmp_path):
     side = ephem.write_sidecar(p, 2162173, "Ryugu", 3e9, 448.0, [0, 10], "162173;")
     assert side["safe_radius"] == pytest.approx(470.4)
     assert json.loads((tmp_path / "ryugu.json").read_text(encoding="utf-8"))["coverage"] == [0, 10]
+
+
+def test_scan_one_clips_window_and_marks_partial(tmp_path, monkeypatch):
+    import pykep as pk
+
+    from orbcalc import ephem
+
+    class E:
+        def __init__(self, m):
+            self.mjd2000 = m
+
+    cases = [
+        ((-60000, 60000), (-54792.0, 54808.0), False),
+        ((0, 100), (0.0, 100.0), True),
+        ((60000, 70000), None, True),
+    ]
+    monkeypatch.setattr(pk.utils, "inspect_spice_kernel", lambda _p: [2162173])
+    for i, (cov, expected, partial) in enumerate(cases):
+        p = tmp_path / f"k{i}.bsp"
+        p.write_bytes(b"")
+        monkeypatch.setattr(pk.utils, "extract_coverage_window",
+                            lambda *_a, c=cov: (E(c[0]), E(c[1])))
+        info = ephem._scan_one(p)
+        assert info["coverage"] == expected
+        assert info["partial"] is partial
+    ephem._loaded.clear()
+
+
+def test_kernels_for_naif_skips_warning(monkeypatch):
+    from orbcalc import ephem
+
+    good = {"file": "a.bsp", "bodies": [{"naif": 1}], "warning": None}
+    bad = {"file": "b.bsp", "bodies": [{"naif": 1}], "warning": "x"}
+    monkeypatch.setattr(ephem, "scan", lambda *a, **k: [good, bad])
+    assert [k["file"] for k in ephem.kernels_for_naif(1)] == ["a.bsp"]
