@@ -36,9 +36,9 @@ def _spk_states(path: Path, naif: int, ets):
         sp.unload(str(path))
 
 
-def verify(path: Path, naif: int, step_d: float, margin_d: float = 30.0):
-    info = ephem._scan_one(path)
-    cov = info.get("coverage")
+def verify(path: Path, naif: int, step_d: float, margin_d: float = 30.0, cmd=None):
+    info = ephem.Ephemeris.from_path(path)
+    cov = info.coverage
     if not cov:
         return f"{path.name}: 无覆盖期, 跳过"
     t0, t1 = cov[0] + margin_d, cov[1] - margin_d
@@ -46,10 +46,7 @@ def verify(path: Path, naif: int, step_d: float, margin_d: float = 30.0):
         return f"{path.name}: 覆盖期过短, 跳过"
     step_d = max(step_d, (t1 - t0) / 4000.0)          # 限制校验点数 (覆盖期可能很长)
     # 用给定的步长在 Horizons 取真实状态 (与生成步长不同 -> 采样在节点之间)
-    cmd = str(naif)
-    side = ephem.sidecar_for_naif(naif)
-    if side and side.get("horizons"):
-        cmd = side["horizons"]
+    cmd = cmd or str(naif)
     ref, ets, _ = horizons.fetch(cmd, t0, t1, step_d)
     got = _spk_states(path, naif, ets)
     n = min(len(ref), len(got))
@@ -69,7 +66,7 @@ def main():
     d = ephem.dir_path()
     names = args.files
     if not names:
-        names = [k["file"] for k in ephem.scan(force=True)]
+        names = [e.file for e in ephem.scan(force=True)]
     if not names:
         print("ephemeris/ 下没有 *.bsp")
         return
@@ -78,11 +75,11 @@ def main():
         if not path.is_file():
             print(f"{name}: 不存在")
             continue
-        for b in ephem._scan_one(path)["bodies"]:
+        for b in ephem.Ephemeris.from_path(path).bodies:
             try:
-                print(verify(path, int(b["naif"]), args.step))
+                print(verify(path, int(b.naif), args.step, cmd=b.horizons))
             except Exception as e:
-                print(f"{name} naif={b['naif']}: 失败 {type(e).__name__}: {str(e).splitlines()[0][:80]}")
+                print(f"{name} naif={b.naif}: 失败 {type(e).__name__}: {str(e).splitlines()[0][:80]}")
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@ orbcalc — 轨道弹道优化计算库
 模块:
     config       TrajConfig (dict 子类) + 预设 + JSON 读写
     eras         发射窗口集合 EraSet (解析/校验/求交/窗口生成)
-    planets      天体物理参数表 (BODY_PARAMS/ConstPhys) + de440s/kernel 星历封装 + 注册表
+    planets      天体物理参数表 (BUILTIN_BODIES/ConstPhys) + de440s/kernel 星历封装 + 注册表
     ephem        外部星历 (ephemeris/*.bsp) 扫描 / 启用 / 加载
     mga          MGA1DSM (MGA-1DSM 轨迹模型, 每腿可选 Lambert 解: 1/2 | 3 | 4 类)
     udp          TOF_UDP / DSM_UDP (基于 mga.MGA1DSM 的优化目标)

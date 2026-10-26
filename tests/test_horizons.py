@@ -193,10 +193,16 @@ def test_add_rejects_table(eph_client, monkeypatch):
     from orbcalc import ephem
 
     client, _ = eph_client
+    from orbcalc.body import Body
+
     monkeypatch.setattr(ephem, "kernels_for_naif",
-                        lambda naif: [{"file": "sb441-n16.bsp",
-                                       "bodies": [{"naif": naif}, {"naif": 2}],
-                                       "warning": None}])
+                        lambda naif: [ephem.Ephemeris(
+                            file="sb441-n16.bsp", size=1,
+                            bodies=(Body(tag="A", name="A", naif=naif,
+                                         kernel="sb441-n16.bsp"),
+                                    Body(tag="B", name="B", naif=2,
+                                         kernel="sb441-n16.bsp")),
+                            coverage=None, partial=True)])
     r = client.post("/api/ephemeris/add", json={
         "naif": 2000001, "horizons": "1;", "name": "1 Ceres"})
     assert r.status_code == 409

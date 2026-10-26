@@ -14,9 +14,11 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 from . import MJD2000_MAX, MJD2000_MIN
+from .body import Body
 
 DIRNAME = "ephemeris"
 
@@ -135,89 +137,117 @@ def _valid_naif(nid: int) -> bool:
             or -99_999 <= nid <= -1)
 
 
-def _scan_one(path: Path) -> dict:
-    import pykep as pk
-
-    side = _load_sidecar(path)
-    metas = _sidecar_bodies(side)
-    info = {"file": path.name, "size": path.stat().st_size, "bodies": [],
-            "coverage": None, "sidecar": side, "warning": None}
+def _num(value, default=0.0) -> float:
+    """旁挂可空数值 -> float; None/非法值回退 default。"""
     try:
-        naifs = [int(n) for n in pk.utils.inspect_spice_kernel(str(path))]
-    except Exception:
-        naifs = []
-    bad = [n for n in naifs if not _valid_naif(n)]
-    bad_set = set(bad)
-    if bad:
-        info["warning"] = f"疑似损坏或不兼容: {len(bad)} 个非法 NAIF id（如 {bad[0]}）"
-    cov = None
-    for nid in naifs:
-        if nid in bad_set:                         # 不把垃圾 id 当星体
-            continue
-        meta = metas.get(nid) or {}
-        name = meta.get("name")
-        if not name:
-            try:
-                name = pk.utils.naifid2name(nid)
-            except Exception:
-                name = None
-        if not name or name == "Not Found":        # pykep 字典未收录 -> NAIF 兜底
-            name = f"NAIF {nid}"
-        body = {"naif": nid, "name": name}
-        for key in ("mu_self", "radius", "safe_radius"):
-            if meta.get(key) is not None:
-                try:
-                    body[key] = float(meta[key])
-                except (TypeError, ValueError):
-                    pass
-        info["bodies"].append(body)
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+@dataclass(frozen=True)
+class Ephemeris:
+    """单个 SPK kernel 的扫描快照 (文件 + 天体 + 覆盖期)。"""
+
+    file: str
+    size: int
+    bodies: tuple[Body, ...]
+    coverage: tuple[float, float] | None
+    partial: bool
+    warning: str | None = None
+
+    @property
+    def is_table(self) -> bool:
+        """是否为多天体星表 (如 sb441 系列)。"""
+        return len(self.bodies) > 1
+
+    def contains(self, naif) -> bool:
+        n = int(naif)
+        return any(b.naif == n for b in self.bodies)
+
+    def option(self) -> dict:
+        """设置页用的 JSON 结构。"""
+        return {"file": self.file, "size": self.size,
+                "n_bodies": 0 if self.warning else len(self.bodies),
+                "coverage": self.coverage, "partial": self.partial,
+                "warning": self.warning}
+
+    @classmethod
+    def from_path(cls, path: Path) -> "Ephemeris":
+        """扫描一个 ``.bsp``: 枚举 NAIF、读取旁挂、裁剪到 de440s 窗口。"""
+        import pykep as pk
+
+        path = Path(path)
+        side = _load_sidecar(path)
+        metas = _sidecar_bodies(side)
+        bodies: list[Body] = []
+        warning = None
         try:
-            e0, e1 = pk.utils.extract_coverage_window(str(path), nid, 0)
-            a, b = float(e0.mjd2000), float(e1.mjd2000)
-            cov = (a, b) if cov is None else (min(cov[0], a), max(cov[1], b))
+            naifs = [int(n) for n in pk.utils.inspect_spice_kernel(str(path))]
         except Exception:
-            c = meta.get("coverage")
-            if isinstance(c, (list, tuple)) and len(c) == 2:
-                a, b = float(c[0]), float(c[1])
+            naifs = []
+        bad = [n for n in naifs if not _valid_naif(n)]
+        bad_set = set(bad)
+        if bad:
+            warning = f"疑似损坏或不兼容: {len(bad)} 个非法 NAIF id（如 {bad[0]}）"
+        cov = None
+        for nid in naifs:
+            if nid in bad_set:                      # 不把垃圾 id 当星体
+                continue
+            meta = metas.get(nid) or {}
+            name = meta.get("name")
+            if not name:
+                try:
+                    name = pk.utils.naifid2name(nid)
+                except Exception:
+                    name = None
+            if not name or name == "Not Found":     # pykep 字典未收录 -> NAIF 兜底
+                name = f"NAIF {nid}"
+            bodies.append(Body(
+                tag=tag_from_name(name) or f"NAIF_{nid}",
+                name=name, naif=nid,
+                mu_self=_num(meta.get("mu_self")),
+                radius=_num(meta.get("radius")),
+                safe_radius=_num(meta.get("safe_radius")),
+                kernel=path.name, horizons=meta.get("horizons"),
+            ))
+            try:
+                e0, e1 = pk.utils.extract_coverage_window(str(path), nid, 0)
+                a, b = float(e0.mjd2000), float(e1.mjd2000)
                 cov = (a, b) if cov is None else (min(cov[0], a), max(cov[1], b))
-    if side and isinstance(side.get("coverage"), (list, tuple)) and len(side["coverage"]) == 2:
-        cov = (float(side["coverage"][0]), float(side["coverage"][1]))
-    if cov is not None:                        # 统一裁剪到 de440s 窗口
-        a = max(float(cov[0]), MJD2000_MIN)
-        b = min(float(cov[1]), MJD2000_MAX)
-        cov = (a, b) if a <= b else None
-    info["coverage"] = cov
-    info["partial"] = cov is None or (cov[0] > MJD2000_MIN + 1.0
-                                      or cov[1] < MJD2000_MAX - 1.0)
-    return info
+            except Exception:
+                c = meta.get("coverage")
+                if isinstance(c, (list, tuple)) and len(c) == 2:
+                    a, b = float(c[0]), float(c[1])
+                    cov = (a, b) if cov is None else (min(cov[0], a), max(cov[1], b))
+        if side and isinstance(side.get("coverage"), (list, tuple)) and len(side["coverage"]) == 2:
+            cov = (float(side["coverage"][0]), float(side["coverage"][1]))
+        if cov is not None:                         # 统一裁剪到 de440s 窗口
+            a = max(float(cov[0]), MJD2000_MIN)
+            b = min(float(cov[1]), MJD2000_MAX)
+            cov = (a, b) if a <= b else None
+        partial = cov is None or (cov[0] > MJD2000_MIN + 1.0
+                                  or cov[1] < MJD2000_MAX - 1.0)
+        return cls(file=path.name, size=path.stat().st_size,
+                   bodies=tuple(bodies), coverage=cov, partial=partial,
+                   warning=warning)
 
 
-def sidecar_for_naif(naif) -> dict | None:
-    """该 NAIF id 的旁挂参数 (若有)。"""
-    for k in scan():
-        side = k.get("sidecar")
-        if side and side.get("naif") is not None and int(side["naif"]) == int(naif):
-            return side
-    return None
-
-
-def file_for_naif(naif) -> dict | None:
+def file_for_naif(naif) -> Ephemeris | None:
     """包含该 NAIF id 的 kernel 描述 (若有)。"""
-    for k in scan():
-        if any(int(b["naif"]) == int(naif) for b in k["bodies"]):
-            return k
+    for e in scan():
+        if e.contains(naif):
+            return e
     return None
 
 
-def kernels_for_naif(naif) -> list:
+def kernels_for_naif(naif) -> list[Ephemeris]:
     """所有包含该 NAIF 的可用 kernel (跳过可疑 warning)。"""
-    return [k for k in scan()
-            if not k.get("warning")
-            and any(int(b["naif"]) == int(naif) for b in k["bodies"])]
+    return [e for e in scan() if not e.warning and e.contains(naif)]
 
 
-def scan(force: bool = False) -> list:
-    """扫描 ``ephemeris/*.bsp`` -> [{file,size,bodies,coverage}]; 结果缓存。"""
+def scan(force: bool = False) -> list[Ephemeris]:
+    """扫描 ``ephemeris/*.bsp`` -> Ephemeris 列表; 结果缓存。"""
     global _scan_cache
     if _scan_cache is not None and not force:
         return _scan_cache
@@ -226,17 +256,14 @@ def scan(force: bool = False) -> list:
     if d.is_dir():
         for f in sorted(d.iterdir()):
             if f.is_file() and f.suffix.lower() == ".bsp":
-                out.append(_scan_one(f))
+                out.append(Ephemeris.from_path(f))
     _scan_cache = out
     return out
 
 
 def options() -> list:
     """供设置页: [{file,size,n_bodies,coverage,partial,warning}]。"""
-    return [{"file": k["file"], "size": k["size"],
-             "n_bodies": 0 if k.get("warning") else len(k["bodies"]),
-             "coverage": k["coverage"], "partial": k.get("partial", False),
-             "warning": k.get("warning")} for k in scan()]
+    return [e.option() for e in scan()]
 
 
 def reset_cache() -> None:
@@ -255,11 +282,11 @@ def active_files() -> list[str]:
     return list(_active)
 
 
-def active_kernels() -> list:
+def active_kernels() -> list[Ephemeris]:
     """已启用且在扫描结果中的 kernel (保持启用顺序); 跳过被判为损坏的 kernel。"""
-    byname = {k["file"]: k for k in scan()}
+    byname = {e.file: e for e in scan()}
     return [byname[f] for f in _active
-            if f in byname and not byname[f].get("warning")]
+            if f in byname and not byname[f].warning]
 
 
 def ensure_loaded(files=None) -> None:
@@ -278,6 +305,11 @@ def ensure_loaded(files=None) -> None:
 
 def loaded_paths() -> set[str]:
     return set(_loaded)
+
+
+def reset_loaded() -> None:
+    """清空本进程已加载 kernel 记录 (测试用)。"""
+    _loaded.clear()
 
 
 def unload(files) -> None:

@@ -32,13 +32,13 @@ def test_physical_params_match_jpl_lp_bit_for_bit():
 
 def test_build_seq_safe_radius_matches_previous_registry_values():
     """轨迹用行星的 safe_radius 与改造前 REGISTRY 值逐位一致 (含 URANUS 回退值)。"""
-    from orbcalc.planets import BODY_PARAMS, build_seq
+    from orbcalc.planets import BUILTIN_BODIES, build_seq
 
     cfg = SimpleNamespace(seq=list(JL_NAMES.keys()), safe_radius={})
     seq, names = build_seq(cfg)
     assert names == [t.capitalize() for t in JL_NAMES]
     for pl, tag in zip(seq, JL_NAMES):
-        assert pl.safe_radius == BODY_PARAMS[tag]["safe_radius"], tag
+        assert pl.safe_radius == BUILTIN_BODIES[tag].safe_radius, tag
 
     # 关键字面值 (改造前 REGISTRY)
     expect = {
@@ -46,7 +46,7 @@ def test_build_seq_safe_radius_matches_previous_registry_values():
         "JUPITER": 142984000.0, "SATURN": 116464000.0, "NEPTUNE": 49244000.0,
         "URANUS": 27898200.000000004,
     }
-    assert {t: BODY_PARAMS[t]["safe_radius"] for t in JL_NAMES} == expect
+    assert {t: BUILTIN_BODIES[t].safe_radius for t in JL_NAMES} == expect
 
 
 def test_safe_radius_cfg_override_wins():

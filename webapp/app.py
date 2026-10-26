@@ -507,17 +507,17 @@ def _ephemeris_add_worker(tid, body):
         step = horizons.DOWNLOAD_STEP_DAYS
 
         hits = ephem.kernels_for_naif(naif)
-        table = next((k for k in hits if len(k["bodies"]) > 1), None)
+        table = next((e for e in hits if e.is_table), None)
         if table:
             return _eph_update(tid, status="error", error=(
-                f"该天体已在星表 {table['file']} 中，无需单独下载"))
-        single = next((k for k in hits if len(k["bodies"]) == 1), None)
+                f"该天体已在星表 {table.file} 中，无需单独下载"))
+        single = next((e for e in hits if not e.is_table), None)
         short = ephem.short_body_name(label) or f"NAIF {naif}"
         if single:
             if not body.get("overwrite"):
                 return _eph_update(tid, status="error", error=(
-                    f"已存在 {single['file']}，请确认覆盖后重试"))
-            path = EPHEMERIS_DIR / single["file"]
+                    f"已存在 {single.file}，请确认覆盖后重试"))
+            path = EPHEMERIS_DIR / single.file
             slug = path.stem
         else:
             slug, path = ephem.unique_kernel_path(EPHEMERIS_DIR, short, naif)
@@ -537,11 +537,11 @@ def _ephemeris_add_worker(tid, body):
         settings.save_file()
         planets.set_active(files)
         warn = "远端数据未完全覆盖请求跨度" if (cov[0] > t0 + 0.5 or cov[1] < t1 - 0.5) else None
-        info = ephem.file_for_naif(naif) or {}
+        info = ephem.file_for_naif(naif)
         _eph_update(tid, status="done", result={
             "file": path.name, "naif": naif, "name": short, "coverage": cov,
             "gm_m3s2": meta.get("mu_self"), "radius_m": meta.get("radius"),
-            "bodies": [b["name"] for b in info.get("bodies", [])], "warning": warn})
+            "bodies": [b.name for b in info.bodies] if info else [], "warning": warn})
     except Exception as e:
         _eph_update(tid, status="error", error=f"{type(e).__name__}: {e}")
 
@@ -715,15 +715,15 @@ def create_app() -> Flask:
                 naif_i = None
             if naif_i is not None:
                 hits = ephem.kernels_for_naif(naif_i)
-                table = next((k for k in hits if len(k["bodies"]) > 1), None)
-                single = next((k for k in hits if len(k["bodies"]) == 1), None)
+                table = next((e for e in hits if e.is_table), None)
+                single = next((e for e in hits if not e.is_table), None)
                 if table:
                     return jsonify({"error": (
-                        f"该天体已在星表 {table['file']} 中，无需单独下载")}), 409
+                        f"该天体已在星表 {table.file} 中，无需单独下载")}), 409
                 if single and not body.get("overwrite"):
                     return jsonify({"error": (
-                        f"已存在 {single['file']}，是否覆盖？"),
-                        "existing": single["file"],
+                        f"已存在 {single.file}，是否覆盖？"),
+                        "existing": single.file,
                         "can_overwrite": True}), 409
         tid = uuid.uuid4().hex
         with _EPH_LOCK:
