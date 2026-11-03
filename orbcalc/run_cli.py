@@ -7,7 +7,7 @@
 行为与 temp/EVVEJU_TOF_1DSM_mp.py 主流程逐位一致 (cfg 驱动):
     [1] 扫描 -> [2] 细化 (run_scan)   | [3] 弹道播种 (run_seed)
     [4] 宽 TOF 压缩 (run_compress)   | [5] 紧 TOF 压缩 (run_frontier)
-    [6] pick_best -> 报告/汇总/绘图数据
+    [6] pick_best -> 汇总/绘图数据
 
 配置: 任务 JSON 同时含轨迹字段 (转 TrajConfig) 与计算字段 (COMPUTE_FIELDS, 见 orbcalc/__init__.py)。
 
@@ -40,7 +40,7 @@ import numpy as np
 from .config import TrajConfig, ensure_project_name
 from .planets import set_active
 from .udp import TOF_UDP, DSM_UDP
-from .decode_report import report, summarize
+from .decode_report import summarize
 from .plot_data import build_plot_json, render_png
 from .selection import candidate_key, select_key
 from .stages import (phase_scan_mp, phase_refine_mp, phase_ballistic_seed_mp,
@@ -169,8 +169,8 @@ def run(args):
 
         slog.inf("[phase] [6/6] pick_best")
         bi, bx, budp = pick_best(cfg, candidates)
-        title = f"*** BEST {cfg.name} SOLUTION ***"
-        slog.inf("\n" + report(bi, cfg, title) + "\n")
+        slog.inf(f"[best] {cfg.name} | TOF={sum(bi['tofs']) / 365.25:.2f} yr | "
+                 f"DSM={bi['dsm_total']:.0f} m/s")
         _write_artifacts(args, cfg, bi, bx, summary, t_start)
         slog.inf(f"[main] done in {time.time() - t_start:.1f} s")
         return 0

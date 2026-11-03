@@ -129,7 +129,7 @@ def test_summarize_includes_rtn(monkeypatch):
     import pykep as pk
 
     from orbcalc import decode_report
-    from orbcalc.decode_report import report, summarize
+    from orbcalc.decode_report import summarize
 
     class _FakePlanet:
         def eph(self, when):
@@ -163,10 +163,6 @@ def test_summarize_includes_rtn(monkeypatch):
     assert out["arrival"]["vinf_in_mag_kmps"] > 0
     assert out["legs"][0]["dsm_iso"] == str(pk.epoch(50.0).to_datetime())
     assert out["legs"][0]["dsm_elapsed_d"] == 50.0
-
-    txt = report(info, cfg)
-    assert "LEG ORBITS / DEPARTURES" in txt
-    assert "departure Earth" in txt and "Arrival Mars" in txt
 
 
 def test_summarize_flyby_arrival_time_and_dsm_elapsed():

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-解码 / 文本报告 / 结构化摘要 — 与 temp/EVVEJU_TOF_1DSM_mp.py 的
-decode/report 逐位一致, 报告文本改为 cfg 驱动; 另输出结构化 summarize()。
+解码 / 结构化摘要 — 与 temp/EVVEJU_TOF_1DSM_mp.py 的 decode 逻辑逐位一致;
+结构化结果由 summarize() 输出到 result.json。
 """
 from __future__ import annotations
 
@@ -197,76 +197,6 @@ def leg_details(info, cfg, planet_getter=None):
         except (AttributeError, IndexError, TypeError, ValueError):
             arrival = None
     return {"legs": legs, "arrival": arrival}
-
-
-def _fmt_vec(v):
-    return ", ".join(f"{float(x):.4f}" for x in v)
-
-
-def report(info, cfg, title="ORBIT SOLUTION (orbcalc)"):
-    """文本报告: 与 mp 脚本格式一致, 打印并返回文本 (由 run_cli 写日志)."""
-    names = _leg_labels(cfg)
-    total_d = sum(info["tofs"])
-    line = "=" * 78
-    out = [line, f"{title}: {'-'.join(cfg.seq)} (de440s)", line,
-           f"Launch            : {pk.epoch(info['t0']).to_datetime()}"]
-    for i, (nm, e) in enumerate(zip(names[1:], info["epochs"][1:])):
-        out.append(f"  {nm:<8} @ {pk.epoch(e).to_datetime()}   TOF={info['tofs'][i]:>8.2f} d")
-    out.append(f"Total TOF         : {total_d:.1f} d = {total_d / 365.25:.2f} yr")
-    out.append("-" * 78)
-    out.append(f"|v∞|_launch       : {info['vinf_launch'] / 1000:.4f} km/s")
-    for i, d in enumerate(info["dsm"]):
-        out.append(f"  DSM ΔV[{i}] ({names[i]}->{names[i+1]}) : {d / 1000:.4f} km/s  "
-                   f"(eta={info['etas'][i]:.3f})")
-    ok = info["dsm_total"] <= cfg.dsm_limit_ms
-    out.append(f"Total DSM ΔV      : {info['dsm_total'] / 1000:.4f} km/s  = "
-               f"{info['dsm_total']:.1f} m/s   "
-               f"[{'DSM ≤ %.0f m/s ✓' % cfg.dsm_limit_ms if ok else 'DSM > %.0f m/s ✗' % cfg.dsm_limit_ms}]")
-    out.append(f"|v∞|_arrival      : {info['vinf_arr'] / 1000:.4f} km/s")
-    details = leg_details(info, cfg)
-    if details["legs"]:
-        out.append("-" * 78)
-        out.append("LEG ORBITS / DEPARTURES (heliocentric ecliptic J2000)")
-        for d in details["legs"]:
-            out.append(f"  Leg {d['index']} {d['from']}->{d['to']}")
-            for key, label in (("ballistic", "departure->DSM"),
-                               ("lambert", "DSM->arrival")):
-                e = d["orbits"][key]
-                if e["a_au"] is None:
-                    out.append(f"    {label:<18} (无法计算)")
-                    continue
-                rev = f"  rev={e['rev']}" if "rev" in e else ""
-                out.append(
-                    f"    {label:<18} a={e['a_au']:.6f} AU  e={e['e']:.6f}  "
-                    f"i={e['i_deg']:.3f}°  Ω={e['raan_deg']:.3f}°  "
-                    f"ω={e['argp_deg']:.3f}°  ν={e['nu_deg']:.3f}°{rev}")
-            dep = d["departure"]
-            out.append(f"    departure {dep['body']:<8} "
-                       f"v_out=({_fmt_vec(dep['v_out_kmps'])}) km/s  "
-                       f"v∞=({_fmt_vec(dep['vinf_out_kmps'])}) km/s  "
-                       f"|v∞|={dep['vinf_out_mag_kmps']:.4f} km/s")
-        if details["arrival"]:
-            a = details["arrival"]
-            out.append(f"  Arrival {a['body']:<8} "
-                       f"v∞=({_fmt_vec(a['vinf_in_kmps'])}) km/s  "
-                       f"|v∞|={a['vinf_in_mag_kmps']:.4f} km/s")
-    for i, nm in enumerate(names[1:-1]):
-        tag = cfg.seq[i + 1]
-        safe = planet_safe_radius(tag, cfg)
-        rp = info["rps"][i]
-        if safe is not None:
-            # 以该行星自身半径换算地表高度 (需 REGISTRY 半径; 用 rp*R 与 safe_radius 比较)
-            from .planets import get_planet
-            R = get_planet(tag).radius
-            alt_km = (rp * R - R) / 1000.0
-            alt_ok = (rp * R) >= safe
-            out.append(f"  Flyby {nm:<8} rp = {rp:.3f} R_planet = 地表以上 {alt_km:.1f} km "
-                       f"(≥{(safe - R) / 1000.0:.0f} km {'✓' if alt_ok else '✗'})")
-        else:
-            out.append(f"  Flyby {nm:<8} rp = {rp:.3f} R_planet")
-    out.append("-" * 78)
-    txt = "\n".join(out)
-    return txt
 
 
 def summarize(info, cfg):
