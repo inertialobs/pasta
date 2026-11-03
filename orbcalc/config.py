@@ -70,10 +70,11 @@ class TrajConfig(dict):
         n_legs = len(self.seq) - 1
         if n_legs < 1:
             raise ValueError("seq 至少需要 2 个天体")
-        from .planets import REGISTRY
-        unknown = [t for t in self.seq if t not in REGISTRY]
+        from .planets import known_tags
+        known = known_tags()
+        unknown = [t for t in self.seq if t not in known]
         if unknown:
-            raise ValueError(f"seq 含未知行星 TAG: {unknown} (可用: {sorted(REGISTRY)})")
+            raise ValueError(f"seq 含未知行星 TAG: {unknown} (可用: {sorted(known)})")
         if len(self.tof_bounds) != n_legs:
             raise ValueError(f"tof_bounds 应有 {n_legs} 条腿, 实际 {len(self.tof_bounds)}")
         for i, b in enumerate(self.tof_bounds):

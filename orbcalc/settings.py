@@ -60,6 +60,9 @@ class Settings(dict):
         if (not isinstance(cov, list) or not cov or len(cov) < 5
                 or any(not (is_num(i) and 0 < i <= 1) for i in cov)):
             raise ValueError(f"t0_coverage 应为5项非空列表, 每项 0<i<=1, 实际 {cov!r}")
+        eph = self["ephemerides"]
+        if not isinstance(eph, list) or any(not isinstance(x, str) for x in eph):
+            raise ValueError(f"ephemerides 应为字符串列表, 实际 {eph!r}")
         return True
 
     def update(self, d:dict):

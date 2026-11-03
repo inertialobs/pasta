@@ -23,6 +23,7 @@
     <button id="shutdownBtn" class="ghost danger">⏹ 终止程序</button>
   </div>
   <span id="sysInfo" class="sys-info"></span>
+  <div id="ephWarnBanner" class="banner warn hidden"></div>
 </header>
 
 <main class="layout">
@@ -163,6 +164,7 @@
   <div class="modal-box paneled">
     <aside class="modal-side">
       <button class="side-item active" data-pane="settings">系统设置</button>
+      <button class="side-item" data-pane="ephemeris">外部星历</button>
       <button class="side-item" data-pane="about">关于</button>
     </aside>
     <div class="modal-body">
@@ -182,6 +184,31 @@
         <div class="actions">
           <button id="sysSave" class="primary">保存</button>
           <button id="sysClose" class="ghost">取消</button>
+        </div>
+      </div>
+
+      <!-- ---- 外部星历 ---- -->
+      <div id="mpaneEphemeris" class="mpane">
+        <h3>外部星历 (ephemeris/)</h3>
+        <div id="sysEphemList" class="ephem-list"></div>
+        <p class="hint">把 *.bsp 星历文件放入程序目录的 ephemeris/ 下, 勾选启用</p>
+        <div class="actions">
+          <button id="sysEphemRescan" class="ghost">重新扫描</button>
+        </div>
+
+        <label class="ephem-head">添加天体 (从 JPL Horizons 下载)</label>
+        <div class="ephem-search">
+          <input id="sysHorizonsQuery" type="text" placeholder="名称/编号, 如 Ryugu / 162173 / Jupiter">
+          <button id="sysHorizonsSearch" class="ghost">搜索</button>
+        </div>
+        <div id="sysHorizonsResults" class="ephem-results"></div>
+        <div class="actions">
+          <button id="sysHorizonsDownload" class="primary" disabled>下载并添加</button>
+        </div>
+        <p class="hint" id="sysHorizonsMsg"></p>
+        <div class="actions">
+          <button id="sysEphSave" class="primary">保存</button>
+          <button id="sysEphClose" class="ghost">取消</button>
         </div>
       </div>
 

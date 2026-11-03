@@ -1,0 +1,327 @@
+# -*- coding: utf-8 -*-
+"""
+外部星历 (SPICE kernel) 扫描 / 启用 / 加载。
+
+- 目录: 运行根下的 ``ephemeris/`` (缺失时由 web 层创建; 用户放入 ``*.bsp``)。
+- 扫描: 对每个 ``.bsp`` 用 ``pk.utils.inspect_spice_kernel`` 枚举 NAIF id 并取名,
+  用 ``pk.utils.extract_coverage_window`` 取覆盖期 (文件级取并集)。
+- 旁挂: 同名 ``<stem>.json`` 可提供名字/μ/半径, 兼容单体与多体表 (见 ``_sidecar_bodies``)。
+- 异常: NAIF id 超出标准范围时把该 kernel 标为可疑 (``warning``), 不生成垃圾天体。
+- 加载: ``ensure_loaded`` 每进程对每个 kernel ``furnsh`` 一次 (模块级去重)。
+- 启用: ``set_active`` 指定启用哪些文件 (进程级状态; 由 settings/job cfg 驱动)。
+"""
+from __future__ import annotations
+
+import json
+import re
+from dataclasses import dataclass
+from pathlib import Path
+
+from . import MJD2000_MAX, MJD2000_MIN
+from .body import Body
+
+DIRNAME = "ephemeris"
+
+_scan_cache: list | None = None
+_active: list[str] = []
+_loaded: set[str] = set()
+
+
+def dir_path() -> Path:
+    return Path.cwd() / DIRNAME
+
+
+def tag_from_name(name) -> str | None:
+    """天体名 -> 合法 TAG (大写、非字母数字转下划线); 空则 None。"""
+    t = re.sub(r"[^A-Za-z0-9]+", "_", str(name)).strip("_").upper()
+    return t or None
+
+
+def slugify(text: str) -> str:
+    """文件名用安全 slug (小写、非字母数字转下划线)。"""
+    s = re.sub(r"[^A-Za-z0-9]+", "_", str(text)).strip("_").lower()
+    return s or "body"
+
+
+def short_body_name(label: str) -> str:
+    """去掉前导编号: '162173 Ryugu' -> 'Ryugu'。"""
+    return re.sub(r"^\s*\d+\s+", "", str(label or "")).strip() or str(label or "")
+
+
+# ---------------------------------------------------------------------------
+def _load_sidecar(path: Path):
+    """读取同名旁挂 ``<stem>.json``。
+
+    兼容两种结构:
+    - 旧单体: ``{naif, name, mu_self, radius, safe_radius, coverage, horizons}``
+    - 多体表: ``{"<naif>": {同上}, ...}`` 或 ``{"bodies": {"<naif>": {同上}, ...}}``
+    """
+    try:
+        j = path.with_suffix(".json")
+        if j.is_file():
+            return json.loads(j.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return None
+
+
+def _sidecar_bodies(side) -> dict[int, dict]:
+    """旁挂 -> ``{naif: 元数据}``; 旧单体与多体表都归一化为同一结构。"""
+    if not isinstance(side, dict):
+        return {}
+    out: dict[int, dict] = {}
+    if side.get("naif") is not None:                 # 旧单体旁挂
+        try:
+            nid = int(side["naif"])
+        except (TypeError, ValueError):
+            nid = None
+        if nid is not None:
+            out[nid] = side
+    raw = side.get("bodies")
+    if not isinstance(raw, dict):
+        raw = side
+    for key, val in raw.items():
+        if not isinstance(val, dict):
+            continue
+        try:
+            nid = int(val.get("naif", key))
+        except (TypeError, ValueError):
+            continue
+        out[nid] = {**val, "naif": nid}
+    return out
+
+
+def write_sidecar(path: Path, naif, name, mu_self=None, radius=None,
+                  coverage=None, horizons_cmd=None) -> dict:
+    """写同名单体旁挂 ``<stem>.json``; 返回写入内容。"""
+    side = {
+        "naif": int(naif),
+        "name": name,
+        "mu_self": mu_self,
+        "radius": radius,
+        "safe_radius": (1.05 * radius if radius else 0.0),
+        "coverage": list(coverage) if coverage else None,
+        "horizons": horizons_cmd,
+    }
+    try:
+        path.with_suffix(".json").write_text(
+            json.dumps(side, ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+    return side
+
+
+def unique_kernel_path(dirpath: Path, label: str, naif) -> tuple[str, Path]:
+    """按名字生成 ``<slug>.bsp``; 与不同 NAIF 的同名旁挂冲突时追加 ``_<naif>``。"""
+    short = short_body_name(label) or f"NAIF {naif}"
+    slug = slugify(short) or f"naif_{naif}"
+    path = Path(dirpath) / f"{slug}.bsp"
+    if path.exists():
+        side = _load_sidecar(path)
+        side_naif = None
+        if isinstance(side, dict) and side.get("naif") is not None:
+            try:
+                side_naif = int(side["naif"])
+            except (TypeError, ValueError):
+                side_naif = None
+        if side_naif not in (None, int(naif)):
+            slug = f"{slug}_{naif}"
+            path = Path(dirpath) / f"{slug}.bsp"
+    return slug, path
+
+
+def _valid_naif(nid: int) -> bool:
+    """NAIF id 合法性启发式: 行星/卫星/小体/航天器之外的 id 通常意味着 kernel 损坏或非标准。"""
+    return (nid == 0 or 1 <= nid <= 999
+            or 1_000_000 <= nid <= 3_999_999
+            or -99_999 <= nid <= -1)
+
+
+def _num(value, default=0.0) -> float:
+    """旁挂可空数值 -> float; None/非法值回退 default。"""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+@dataclass(frozen=True)
+class Ephemeris:
+    """单个 SPK kernel 的扫描快照 (文件 + 天体 + 覆盖期)。"""
+
+    file: str
+    size: int
+    bodies: tuple[Body, ...]
+    coverage: tuple[float, float] | None
+    partial: bool
+    warning: str | None = None
+
+    @property
+    def is_table(self) -> bool:
+        """是否为多天体星表 (如 sb441 系列)。"""
+        return len(self.bodies) > 1
+
+    def contains(self, naif) -> bool:
+        n = int(naif)
+        return any(b.naif == n for b in self.bodies)
+
+    def option(self) -> dict:
+        """设置页用的 JSON 结构。"""
+        return {"file": self.file, "size": self.size,
+                "n_bodies": 0 if self.warning else len(self.bodies),
+                "coverage": self.coverage, "partial": self.partial,
+                "warning": self.warning}
+
+    @classmethod
+    def from_path(cls, path: Path) -> "Ephemeris":
+        """扫描一个 ``.bsp``: 枚举 NAIF、读取旁挂、裁剪到 de440s 窗口。"""
+        import pykep as pk
+
+        path = Path(path)
+        side = _load_sidecar(path)
+        metas = _sidecar_bodies(side)
+        bodies: list[Body] = []
+        warning = None
+        try:
+            naifs = [int(n) for n in pk.utils.inspect_spice_kernel(str(path))]
+        except Exception:
+            naifs = []
+        bad = [n for n in naifs if not _valid_naif(n)]
+        bad_set = set(bad)
+        if bad:
+            warning = f"疑似损坏或不兼容: {len(bad)} 个非法 NAIF id（如 {bad[0]}）"
+        cov = None
+        for nid in naifs:
+            if nid in bad_set:                      # 不把垃圾 id 当星体
+                continue
+            meta = metas.get(nid) or {}
+            name = meta.get("name")
+            if not name:
+                try:
+                    name = pk.utils.naifid2name(nid)
+                except Exception:
+                    name = None
+            if not name or name == "Not Found":     # pykep 字典未收录 -> NAIF 兜底
+                name = f"NAIF {nid}"
+            bodies.append(Body(
+                tag=tag_from_name(name) or f"NAIF_{nid}",
+                name=name, naif=nid,
+                mu_self=_num(meta.get("mu_self")),
+                radius=_num(meta.get("radius")),
+                safe_radius=_num(meta.get("safe_radius")),
+                kernel=path.name, horizons=meta.get("horizons"),
+            ))
+            try:
+                e0, e1 = pk.utils.extract_coverage_window(str(path), nid, 0)
+                a, b = float(e0.mjd2000), float(e1.mjd2000)
+                cov = (a, b) if cov is None else (min(cov[0], a), max(cov[1], b))
+            except Exception:
+                c = meta.get("coverage")
+                if isinstance(c, (list, tuple)) and len(c) == 2:
+                    a, b = float(c[0]), float(c[1])
+                    cov = (a, b) if cov is None else (min(cov[0], a), max(cov[1], b))
+        if side and isinstance(side.get("coverage"), (list, tuple)) and len(side["coverage"]) == 2:
+            cov = (float(side["coverage"][0]), float(side["coverage"][1]))
+        if cov is not None:                         # 统一裁剪到 de440s 窗口
+            a = max(float(cov[0]), MJD2000_MIN)
+            b = min(float(cov[1]), MJD2000_MAX)
+            cov = (a, b) if a <= b else None
+        partial = cov is None or (cov[0] > MJD2000_MIN + 1.0
+                                  or cov[1] < MJD2000_MAX - 1.0)
+        return cls(file=path.name, size=path.stat().st_size,
+                   bodies=tuple(bodies), coverage=cov, partial=partial,
+                   warning=warning)
+
+
+def file_for_naif(naif) -> Ephemeris | None:
+    """包含该 NAIF id 的 kernel 描述 (若有)。"""
+    for e in scan():
+        if e.contains(naif):
+            return e
+    return None
+
+
+def kernels_for_naif(naif) -> list[Ephemeris]:
+    """所有包含该 NAIF 的可用 kernel (跳过可疑 warning)。"""
+    return [e for e in scan() if not e.warning and e.contains(naif)]
+
+
+def scan(force: bool = False) -> list[Ephemeris]:
+    """扫描 ``ephemeris/*.bsp`` -> Ephemeris 列表; 结果缓存。"""
+    global _scan_cache
+    if _scan_cache is not None and not force:
+        return _scan_cache
+    out = []
+    d = dir_path()
+    if d.is_dir():
+        for f in sorted(d.iterdir()):
+            if f.is_file() and f.suffix.lower() == ".bsp":
+                out.append(Ephemeris.from_path(f))
+    _scan_cache = out
+    return out
+
+
+def options() -> list:
+    """供设置页: [{file,size,n_bodies,coverage,partial,warning}]。"""
+    return [e.option() for e in scan()]
+
+
+def reset_cache() -> None:
+    global _scan_cache
+    _scan_cache = None
+
+
+# ---------------------------------------------------------------------------
+def set_active(files) -> None:
+    """设置启用的 kernel 文件名 (按给定顺序; 未知/不存在的在解析时忽略)。"""
+    global _active
+    _active = [str(x) for x in (files or [])]
+
+
+def active_files() -> list[str]:
+    return list(_active)
+
+
+def active_kernels() -> list[Ephemeris]:
+    """已启用且在扫描结果中的 kernel (保持启用顺序); 跳过被判为损坏的 kernel。"""
+    byname = {e.file: e for e in scan()}
+    return [byname[f] for f in _active
+            if f in byname and not byname[f].warning]
+
+
+def ensure_loaded(files=None) -> None:
+    """对给定/已启用的 kernel 逐进程 ``furnsh`` 一次 (去重)。"""
+    import pykep as pk
+
+    d = dir_path()
+    for f in (files if files is not None else _active):
+        p = (d / f).resolve()
+        key = str(p)
+        if key in _loaded or not p.exists():
+            continue
+        pk.utils.load_spice_kernels(key)
+        _loaded.add(key)
+
+
+def loaded_paths() -> set[str]:
+    return set(_loaded)
+
+
+def reset_loaded() -> None:
+    """清空本进程已加载 kernel 记录 (测试用)。"""
+    _loaded.clear()
+
+
+def unload(files) -> None:
+    """从 SPICE 卸载指定 kernel (删除文件前释放 Windows 文件锁)。"""
+    import pykep as pk
+
+    d = dir_path()
+    for f in (files or []):
+        p = str((d / f).resolve())
+        if p in _loaded:
+            try:
+                pk.utils.unload_spice_kernels(p)
+            except Exception:
+                pass
+            _loaded.discard(p)

@@ -308,3 +308,17 @@ def test_infeasible_multirev_is_penalized_in_fitness_and_raises_in_decode():
         assert udp.fitness(x) == [1e12]
         with pytest.raises(ValueError, match="Lambert"):
             udp.udp._compute_dvs(x)
+
+
+@pytest.mark.requires_pykep
+def test_get_bounds_matches_pykep_native_bit_for_bit():
+    """MGA1DSM.get_bounds 在半径>0 时与 pykep 原生逐位一致 (含 np.nan)。"""
+    from orbcalc.udp import _make_trajopt
+
+    cfg = TrajConfig()
+    native = _native_pykep(cfg)
+    ours = _make_trajopt(cfg, None, None, cfg.vinf_bounds_kmps)
+    lb_n, ub_n = native.get_bounds()
+    lb_o, ub_o = ours.get_bounds()
+    np.testing.assert_array_equal(np.asarray(lb_n, dtype=float), np.asarray(lb_o, dtype=float))
+    np.testing.assert_array_equal(np.asarray(ub_n, dtype=float), np.asarray(ub_o, dtype=float))
