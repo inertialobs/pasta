@@ -24,13 +24,24 @@ def kernel_dir(monkeypatch):
     ephem.reset_loaded()
 
 
-def test_tag_from_name():
-    from orbcalc.ephem import tag_from_name
+def test_naming_and_naif_helpers():
+    from orbcalc.ephem import _valid_naif, tag_from_name
+    from orbcalc.planets import _display
 
     assert tag_from_name("EARTH") == "EARTH"
     assert tag_from_name("1 Ceres") == "1_CERES"
     assert tag_from_name("NAIF 2000001") == "NAIF_2000001"
     assert tag_from_name("  ") is None
+
+    assert _display("52 Europa") == "52 Europa"
+    assert _display("2002 MS4") == "2002 MS4"
+    assert _display("mercury") == "Mercury"
+    assert _display("EARTH") == "Earth"
+
+    for nid in (0, 1, 10, 199, 399, 2000001, 2090482, 3361580, -82):
+        assert _valid_naif(nid), nid
+    for nid in (4481, 10852909, 1129403230, -1210463288, 128714090):
+        assert not _valid_naif(nid), nid
 
 
 def test_body_and_ephemeris_models():
@@ -113,6 +124,7 @@ def test_bodies_endpoint_lists_builtin_and_kernel(kernel_dir):
     assert "MOON" in got and got["MOON"]["builtin"] is False
 
 
+@pytest.mark.slow
 def test_massless_asteroid_waypoint(kernel_dir):
     """μ=0/半径=0 的天体 (此处用 kernel 里的 MOON) 可作中间定时路点:
     rp 下界护为 0, 边界有限, 优化器可算且可解出轨迹。"""
@@ -197,7 +209,7 @@ def _no_cover(*_a):
     raise RuntimeError("no coverage")
 
 
-def test_scan_one_uses_multi_body_sidecar(tmp_path, monkeypatch):
+def test_ephemeris_sidecar_shapes(tmp_path, monkeypatch):
     import pykep as pk
 
     from orbcalc import ephem
@@ -213,13 +225,6 @@ def test_scan_one_uses_multi_body_sidecar(tmp_path, monkeypatch):
     info = ephem.Ephemeris.from_path(p)
     assert info.bodies[0].name == "Ceres"
     assert info.bodies[0].mu_self == 6.2e10
-    ephem.reset_loaded()
-
-
-def test_scan_one_old_sidecar_unchanged(tmp_path, monkeypatch):
-    import pykep as pk
-
-    from orbcalc import ephem
 
     p = tmp_path / "ryugu.bsp"
     p.write_bytes(b"")
@@ -227,7 +232,6 @@ def test_scan_one_old_sidecar_unchanged(tmp_path, monkeypatch):
         '{"naif": 2162173, "name": "Ryugu", "mu_self": 3e9, "radius": 448.0, '
         '"safe_radius": 470.4}', encoding="utf-8")
     monkeypatch.setattr(pk.utils, "inspect_spice_kernel", lambda _p: [2162173])
-    monkeypatch.setattr(pk.utils, "extract_coverage_window", _no_cover)
 
     body = ephem.Ephemeris.from_path(p).bodies[0]
     assert (body.naif, body.name, body.mu_self, body.radius, body.safe_radius) == (
@@ -236,75 +240,66 @@ def test_scan_one_old_sidecar_unchanged(tmp_path, monkeypatch):
     ephem.reset_loaded()
 
 
-def test_display_keeps_numbered_names():
-    from orbcalc.planets import _display
-
-    assert _display("52 Europa") == "52 Europa"
-    assert _display("2002 MS4") == "2002 MS4"
-    assert _display("mercury") == "Mercury"
-    assert _display("EARTH") == "Earth"
-
-
-def test_valid_naif_ranges():
-    from orbcalc.ephem import _valid_naif
-
-    for nid in (0, 1, 10, 199, 399, 2000001, 2090482, 3361580, -82):
-        assert _valid_naif(nid), nid
-    for nid in (4481, 10852909, 1129403230, -1210463288, 128714090):
-        assert not _valid_naif(nid), nid
-
-
-def test_scan_one_flags_and_drops_bad_naifs(tmp_path, monkeypatch):
+def test_ephemeris_scan_edge_cases(tmp_path, monkeypatch):
     import pykep as pk
 
     from orbcalc import ephem
 
+    class E:
+        def __init__(self, m):
+            self.mjd2000 = m
+
+    # 非法 NAIF: 告警且不生成垃圾天体
     p = tmp_path / "bad.bsp"
     p.write_bytes(b"")
     monkeypatch.setattr(pk.utils, "inspect_spice_kernel", lambda _p: [1, 1129403230])
     monkeypatch.setattr(pk.utils, "extract_coverage_window", _no_cover)
-
     info = ephem.Ephemeris.from_path(p)
     assert [b.naif for b in info.bodies] == [1]
     assert "1129403230" in info.warning
-    ephem.reset_loaded()
 
-
-def test_active_kernels_skips_warned(monkeypatch):
-    from orbcalc import ephem
-    from orbcalc.body import Body
-
-    kern = ephem.Ephemeris(
-        file="bad.bsp", size=1,
-        bodies=(Body(tag="X", name="X", naif=1, kernel="bad.bsp"),),
-        coverage=None, partial=True, warning="bad")
-    monkeypatch.setattr(ephem, "scan", lambda *a, **k: [kern])
-    ephem.set_active(["bad.bsp"])
-    assert ephem.active_kernels() == []
-    ephem.set_active([])
-
-
-def test_options_includes_warning(monkeypatch):
-    from orbcalc import ephem
-
-    kern = ephem.Ephemeris(file="bad.bsp", size=1, bodies=(), coverage=None,
-                           partial=True, warning="bad")
-    monkeypatch.setattr(ephem, "scan", lambda *a, **k: [kern])
-    assert ephem.options()[0]["warning"] == "bad"
-
-
-def test_scan_one_falls_back_to_naif_name(tmp_path, monkeypatch):
-    import pykep as pk
-
-    from orbcalc import ephem
-
+    # pykep 查不到名字: 回退 NAIF
     p = tmp_path / "unnamed.bsp"
     p.write_bytes(b"")
     monkeypatch.setattr(pk.utils, "inspect_spice_kernel", lambda _p: [2469219])
-    monkeypatch.setattr(pk.utils, "extract_coverage_window", _no_cover)
-
     assert ephem.Ephemeris.from_path(p).bodies[0].name == "NAIF 2469219"
+
+    # 覆盖期裁剪到 de440s 窗口并标记 partial
+    cases = [
+        ((-60000, 60000), (-54792.0, 54808.0), False),
+        ((0, 100), (0.0, 100.0), True),
+        ((60000, 70000), None, True),
+    ]
+    monkeypatch.setattr(pk.utils, "inspect_spice_kernel", lambda _p: [2162173])
+    for i, (cov, expected, partial) in enumerate(cases):
+        p = tmp_path / f"k{i}.bsp"
+        p.write_bytes(b"")
+        monkeypatch.setattr(pk.utils, "extract_coverage_window",
+                            lambda *_a, c=cov: (E(c[0]), E(c[1])))
+        info = ephem.Ephemeris.from_path(p)
+        assert info.coverage == expected
+        assert info.partial is partial
     ephem.reset_loaded()
+
+
+def test_warning_kernel_filtering(monkeypatch):
+    from orbcalc import ephem
+    from orbcalc.body import Body
+
+    good = ephem.Ephemeris(
+        file="good.bsp", size=1,
+        bodies=(Body(tag="X", name="X", naif=1, kernel="good.bsp"),),
+        coverage=None, partial=True)
+    bad = ephem.Ephemeris(
+        file="bad.bsp", size=1,
+        bodies=(Body(tag="X", name="X", naif=1, kernel="bad.bsp"),),
+        coverage=None, partial=True, warning="bad")
+    monkeypatch.setattr(ephem, "scan", lambda *a, **k: [good, bad])
+    ephem.set_active(["good.bsp", "bad.bsp"])
+    assert [e.file for e in ephem.active_kernels()] == ["good.bsp"]
+    assert ephem.options()[1]["warning"] == "bad"
+    assert [e.file for e in ephem.kernels_for_naif(1)] == ["good.bsp"]
+    ephem.set_active([])
 
 
 def test_unique_kernel_path_and_sidecar(tmp_path):
@@ -325,45 +320,3 @@ def test_unique_kernel_path_and_sidecar(tmp_path):
     side = ephem.write_sidecar(p, 2162173, "Ryugu", 3e9, 448.0, [0, 10], "162173;")
     assert side["safe_radius"] == pytest.approx(470.4)
     assert json.loads((tmp_path / "ryugu.json").read_text(encoding="utf-8"))["coverage"] == [0, 10]
-
-
-def test_scan_one_clips_window_and_marks_partial(tmp_path, monkeypatch):
-    import pykep as pk
-
-    from orbcalc import ephem
-
-    class E:
-        def __init__(self, m):
-            self.mjd2000 = m
-
-    cases = [
-        ((-60000, 60000), (-54792.0, 54808.0), False),
-        ((0, 100), (0.0, 100.0), True),
-        ((60000, 70000), None, True),
-    ]
-    monkeypatch.setattr(pk.utils, "inspect_spice_kernel", lambda _p: [2162173])
-    for i, (cov, expected, partial) in enumerate(cases):
-        p = tmp_path / f"k{i}.bsp"
-        p.write_bytes(b"")
-        monkeypatch.setattr(pk.utils, "extract_coverage_window",
-                            lambda *_a, c=cov: (E(c[0]), E(c[1])))
-        info = ephem.Ephemeris.from_path(p)
-        assert info.coverage == expected
-        assert info.partial is partial
-    ephem.reset_loaded()
-
-
-def test_kernels_for_naif_skips_warning(monkeypatch):
-    from orbcalc import ephem
-    from orbcalc.body import Body
-
-    good = ephem.Ephemeris(
-        file="a.bsp", size=1,
-        bodies=(Body(tag="X", name="X", naif=1, kernel="a.bsp"),),
-        coverage=None, partial=True)
-    bad = ephem.Ephemeris(
-        file="b.bsp", size=1,
-        bodies=(Body(tag="X", name="X", naif=1, kernel="b.bsp"),),
-        coverage=None, partial=True, warning="x")
-    monkeypatch.setattr(ephem, "scan", lambda *a, **k: [good, bad])
-    assert [e.file for e in ephem.kernels_for_naif(1)] == ["a.bsp"]

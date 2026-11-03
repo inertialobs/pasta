@@ -66,17 +66,12 @@ def _same_result(a, b):
 # ---------------------------------------------------------------------------
 # 配置层 (不依赖 pykep)
 # ---------------------------------------------------------------------------
-def test_lambert_revs_maps_solution_index_to_revolutions():
+def test_lambert_types_config_lifecycle():
     assert [lambert_revs(k) for k in (0, 1, 2, 3, 4)] == [0, 1, 1, 2, 2]
 
-
-def test_default_lambert_types_are_single_rev_per_leg():
     cfg = TrajConfig()
     assert cfg.lambert_types == [0] * (len(cfg.seq) - 1)
 
-
-def test_lambert_types_follow_leg_count_on_update():
-    cfg = TrajConfig()
     cfg.update({
         "seq": ["EARTH", "VENUS", "EARTH"],
         "tof_bounds": [[100, 200], [100, 300]],
@@ -95,14 +90,12 @@ def test_lambert_types_follow_leg_count_on_update():
     cfg.update({"seq": ["EARTH", "VENUS"], "tof_bounds": [[100, 200]]})
     assert cfg.lambert_types == [1]
 
-
-def test_lambert_types_reject_unknown_values_and_keep_previous_config():
-    cfg = TrajConfig()
-    before = list(cfg.lambert_types)
+    bad_cfg = TrajConfig()
+    before = list(bad_cfg.lambert_types)
     for bad in ([3, 0, 0, 0, 0], [0, 0, 0, 0, 0.5], [True, 0, 0, 0, 0], [-1, 0, 0, 0, 0]):
         with pytest.raises(ValueError):
-            cfg.update({"lambert_types": bad})
-    assert cfg.lambert_types == before
+            bad_cfg.update({"lambert_types": bad})
+    assert bad_cfg.lambert_types == before
 
 
 def test_pykep_version_note_only_for_unverified_versions():
@@ -138,6 +131,21 @@ def test_single_rev_matches_pykep_native_bit_for_bit():
         _same_result(a, ours._compute_dvs(x))
         n_ok += 1
     assert n_ok > 0
+
+    # 同一腿 multi_revs>0 时的 0 圈解必须与 multi_revs=0 逐位一致
+    import pykep as pk
+
+    from orbcalc.planets import get_planet
+
+    earth, venus = get_planet("EARTH"), get_planet("VENUS")
+    t0, tof = 10000.0, 500.0
+    r0, _ = earth.eph(pk.epoch(t0))
+    r1, _ = venus.eph(pk.epoch(t0 + tof))
+    lp0 = pk.lambert_problem(r0, r1, tof * pk.DAY2SEC, pk.MU_SUN, cw=False, multi_revs=0)
+    lp1 = pk.lambert_problem(r0, r1, tof * pk.DAY2SEC, pk.MU_SUN, cw=False, multi_revs=1)
+    assert len(lp1.v0) >= 3, "该几何下应存在 1 圈解"
+    np.testing.assert_allclose(lp1.v0[0], lp0.v0[0], rtol=0, atol=1e-9)
+    np.testing.assert_allclose(lp1.v1[0], lp0.v1[0], rtol=0, atol=1e-9)
 
 
 @pytest.mark.requires_pykep
@@ -180,28 +188,7 @@ def test_missing_upstream_member_fails_fast(monkeypatch):
 
 
 @pytest.mark.requires_pykep
-def test_solution_zero_is_independent_of_requested_revolutions():
-    """拼接前提: 同一腿若因相邻腿需要多圈而以 multi_revs>0 求解, 其 0 圈解 (类型 1/2)
-    必须与 multi_revs=0 时逐位一致, 否则混合序列中单圈腿会被静默改变。"""
-    import pykep as pk
-
-    from orbcalc.planets import get_planet
-
-    earth, venus = get_planet("EARTH"), get_planet("VENUS")
-    t0, tof = 10000.0, 500.0
-    r0, _ = earth.eph(pk.epoch(t0))
-    r1, _ = venus.eph(pk.epoch(t0 + tof))
-    lp0 = pk.lambert_problem(r0, r1, tof * pk.DAY2SEC, pk.MU_SUN, cw=False, multi_revs=0)
-    lp1 = pk.lambert_problem(r0, r1, tof * pk.DAY2SEC, pk.MU_SUN, cw=False, multi_revs=1)
-    assert len(lp1.v0) >= 3, "该几何下应存在 1 圈解"
-    np.testing.assert_allclose(lp1.v0[0], lp0.v0[0], rtol=0, atol=1e-9)
-    np.testing.assert_allclose(lp1.v1[0], lp0.v1[0], rtol=0, atol=1e-9)
-
-
-# ---------------------------------------------------------------------------
-# pykep 相关: 多圈实例与拼接
-# ---------------------------------------------------------------------------
-@pytest.mark.requires_pykep
+@pytest.mark.slow
 def test_single_leg_optimum_can_be_a_one_rev_transfer():
     """实例: EARTH->VENUS 单腿, 只允许类型 3 (1 圈低能). SADE 固定种子搜索,
     最优解的 DSM->到达 弧扫过角应在 (360, 720) 度, 即恰好 1 圈 + 部分弧。"""
@@ -231,6 +218,7 @@ def test_single_leg_optimum_can_be_a_one_rev_transfer():
 
 
 @pytest.mark.requires_pykep
+@pytest.mark.slow
 def test_lambert_type_applies_to_its_own_leg_only():
     """两腿 EARTH->VENUS->EARTH: 类型 [1, 0] 时仅第 0 腿为 1 圈, 第 1 腿仍为单圈; 反之亦然。"""
     from orbcalc.decode_report import decode
@@ -249,6 +237,7 @@ def test_lambert_type_applies_to_its_own_leg_only():
 
 
 @pytest.mark.requires_pykep
+@pytest.mark.slow
 @pytest.mark.parametrize("types", [[1, 0], [0, 1], [1, 2], [2, 1]])
 def test_mixed_single_and_multirev_legs_join_continuously_at_flyby(types):
     """拼接: 1/2 类与 3/4 类相邻时, 各腿在交会点处连续。

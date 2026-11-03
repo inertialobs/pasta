@@ -12,20 +12,18 @@ def _norm(v):
     return math.sqrt(sum(c * c for c in v))
 
 
-def test_rtn_components_axes_are_orthonormal_and_reconstruct_vec():
+def test_rtn_components():
     from orbcalc.decode_report import _rtn_components
 
     # r 沿 +x, v 沿 +y -> R=+x, N=+z, T=+y
     comp = _rtn_components([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [3.0, 4.0, 5.0])
     assert comp == [3.0, 4.0, 5.0]
 
-
-def test_rtn_components_degenerate_returns_zero():
-    from orbcalc.decode_report import _rtn_components
-
-    assert _rtn_components([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 2.0, 3.0]) == [0.0, 0.0, 0.0]
+    assert _rtn_components([0.0, 0.0, 0.0], [1.0, 0.0, 0.0],
+                           [1.0, 2.0, 3.0]) == [0.0, 0.0, 0.0]
     # r 与 v 平行 -> 无轨道面
-    assert _rtn_components([1.0, 0.0, 0.0], [2.0, 0.0, 0.0], [1.0, 2.0, 3.0]) == [0.0, 0.0, 0.0]
+    assert _rtn_components([1.0, 0.0, 0.0], [2.0, 0.0, 0.0],
+                           [1.0, 2.0, 3.0]) == [0.0, 0.0, 0.0]
 
 
 def test_dsm_vectors_recover_impulse_vector():
@@ -77,7 +75,7 @@ def test_dsm_vectors_recover_impulse_vector():
     assert dP == pytest.approx(sum(delta[k] * p_hat[k] for k in range(3)), abs=1e-6)
 
 
-def test_build_plot_json_contains_dsm_direction(monkeypatch):
+def test_build_plot_json_dsm_direction(monkeypatch):
     import pykep as pk
 
     from orbcalc import plot_data
@@ -115,29 +113,14 @@ def test_build_plot_json_contains_dsm_direction(monkeypatch):
     info["dsm_vecs"] = [[0.0, 0.0, 0.0]]
     assert plot_data.build_plot_json(cfg, info)["legs"][0]["dsm"]["unit"] is None
 
-
-def test_build_plot_json_without_direction_fields_still_works(monkeypatch):
-    import pykep as pk
-
-    from orbcalc import plot_data
-
-    class _FakePlanet:
-        def eph(self, when):
-            return [pk.AU, 0.0, 0.0], [0.0, 0.0, 0.0]
-
-    monkeypatch.setattr(plot_data, "get_planet", lambda tag: _FakePlanet())
-    mu = pk.MU_SUN
-    r0 = [pk.AU, 0.0, 0.0]
-    v0 = [0.0, math.sqrt(mu / pk.AU), 0.0]
-    r_dsm, v = pk.propagate_lagrangian([r0, v0], 100.0 * pk.DAY2SEC, mu)
-    cfg = SimpleNamespace(name="t", seq=["EARTH", "MARS"])
-    info = {
+    # 旧结果没有方向字段时仍可渲染
+    info2 = {
         "epochs": [0.0, 200.0], "tofs": [200.0],
         "dsm": [10.0], "dsm_total": 10.0,
-        "blegs": [(r0, v0), (r_dsm, v)], "bep": [0.0, 100.0],
+        "blegs": [(r0, v0), (r_dsm, v_post)], "bep": [0.0, 100.0],
     }
-    dsm = plot_data.build_plot_json(cfg, info)["legs"][0]["dsm"]
-    assert "vec" not in dsm and "unit" not in dsm
+    dsm2 = plot_data.build_plot_json(cfg, info2)["legs"][0]["dsm"]
+    assert "vec" not in dsm2 and "unit" not in dsm2
 
 
 def test_summarize_includes_rtn():

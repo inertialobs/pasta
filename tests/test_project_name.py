@@ -8,15 +8,12 @@ from orbcalc import DEFAULT_PROJECT_NAME
 from orbcalc.config import TrajConfig, auto_project_name, ensure_project_name
 
 
-def test_default_name_is_blank_and_generated_name_uses_sequence_and_window_start_months():
+def test_default_name_and_route_codes():
     seq = ["EARTH", "VENUS", "VENUS", "EARTH", "JUPITER", "SATURN"]
     eras = [["1997-10-01", "1997-10-31"], ["2029-01-01", "2033-06-30"]]
 
     assert DEFAULT_PROJECT_NAME == ""
     assert auto_project_name(seq, eras) == "EVVEJS 1997-10+2029-01"
-
-
-def test_route_codes_use_single_m_for_mercury_and_mars_and_empty_eras():
     assert auto_project_name(["MERCURY", "MARS"], []) == "MM"
 
 

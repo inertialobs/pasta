@@ -14,7 +14,7 @@ Asteroid physical parameters (km, seconds, rotational period in hours):
 """
 
 
-def test_naif_id_and_slugify():
+def test_horizons_parsing():
     from orbcalc import horizons
 
     assert horizons.naif_id(162173) == 2162173
@@ -22,18 +22,10 @@ def test_naif_id_and_slugify():
     assert horizons.slugify("162173 Ryugu") == "162173_ryugu"
     assert horizons.slugify("  ") == "body"
 
-
-def test_parse_header_units():
-    from orbcalc import horizons
-
     h = horizons.parse_header(HEADER)
     assert h["name"] == "162173 Ryugu (1999 JU3)"
     assert h["mu_self"] == pytest.approx(3.0e9)     # km^3/s^2 -> m^3/s^2
     assert h["radius"] == pytest.approx(448.0)      # km -> m
-
-
-def test_parse_vectors_reads_states_and_et():
-    from orbcalc import horizons
 
     text = (
         "header\n$$SOE\n"
@@ -48,27 +40,21 @@ def test_parse_vectors_reads_states_and_et():
     assert ets[0] == pytest.approx((2456544.5 - horizons.J2000_JD) * 86400.0)
 
 
-def test_search_prefers_small_body(monkeypatch):
+def test_search_small_body_and_unnumbered(monkeypatch):
     from orbcalc import horizons
 
+    monkeypatch.setattr(horizons, "_naif_from_name",
+                        lambda name: (_ for _ in ()).throw(Exception("n/a")))
     monkeypatch.setattr(horizons, "_sbdb", lambda q: {
         "des": "162173", "shortname": "162173 Ryugu",
         "fullname": "162173 Ryugu (1999 JU3)",
         "orbit_class": {"name": "Apollo"}})
-    monkeypatch.setattr(horizons, "_naif_from_name",
-                        lambda name: (_ for _ in ()).throw(Exception("n/a")))
     res = horizons.search("Ryugu")
     assert res and res[0]["kind"] == "small_body" and res[0]["naif"] == 2162173
     assert res[0]["horizons"] == "162173;"
 
-
-def test_search_unnumbered_is_unsupported(monkeypatch):
-    from orbcalc import horizons
-
     monkeypatch.setattr(horizons, "_sbdb", lambda q: {
         "des": "2016 HO3", "shortname": "2016 HO3", "fullname": "2016 HO3"})
-    monkeypatch.setattr(horizons, "_naif_from_name",
-                        lambda name: (_ for _ in ()).throw(Exception("n/a")))
     res = horizons.search("2016 HO3")
     assert res[0]["kind"] == "unnumbered" and res[0]["naif"] is None
 
@@ -240,31 +226,27 @@ def test_get_retries_transient_then_succeeds(monkeypatch):
     assert len(calls) == 3
 
 
-def test_get_4xx_fails_immediately(monkeypatch):
+def test_get_failure_policies(monkeypatch):
     from orbcalc import horizons
 
     calls = []
 
-    def fake(url, timeout=None):
+    def _4xx(url, timeout=None):
         calls.append(url)
         raise urllib.error.HTTPError(url, 400, "bad", None, None)
 
-    monkeypatch.setattr(horizons.urllib.request, "urlopen", fake)
+    monkeypatch.setattr(horizons.urllib.request, "urlopen", _4xx)
     with pytest.raises(urllib.error.HTTPError):
         horizons._get("http://x")
     assert len(calls) == 1
 
+    calls.clear()
 
-def test_get_fails_after_three_transient_errors(monkeypatch):
-    from orbcalc import horizons
-
-    calls = []
-
-    def fake(url, timeout=None):
+    def _transient(url, timeout=None):
         calls.append(url)
         raise urllib.error.URLError("boom")
 
-    monkeypatch.setattr(horizons.urllib.request, "urlopen", fake)
+    monkeypatch.setattr(horizons.urllib.request, "urlopen", _transient)
     monkeypatch.setattr(horizons.time, "sleep", lambda _s: None)
     with pytest.raises(RuntimeError, match="已重试 3 次"):
         horizons._get("http://x")

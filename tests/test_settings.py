@@ -13,20 +13,17 @@ def test_compute_override_is_applied_without_changing_other_defaults():
     assert resolved["refine_keep_pct"] == 80
 
 
-@pytest.mark.parametrize(
-    ("field", "value"),
-    [
+def test_compute_validation_rejects_invalid_values():
+    for field, value in [
         ("scan_keep_pct", 0),
         ("refine_keep_pct", 101),
         ("jobs", 0),
         ("era_step_d", 0),
         ("t0_coverage", [1.0, 0.5]),
-    ],
-)
-def test_compute_validation_rejects_invalid_values(field, value):
-    settings = Settings()
-    with pytest.raises(ValueError):
-        settings.update({field: value})
+    ]:
+        settings = Settings()
+        with pytest.raises(ValueError):
+            settings.update({field: value})
 
 
 def test_failed_update_is_transactional():
