@@ -939,6 +939,20 @@ function dsmArrowTrace(tail, unit, L, name) {
   };
 }
 
+function orbitLabel(label, e) {
+  if (!e) return "";
+  const a = e.a_au == null ? "–" : fmt(e.a_au, 4);
+  const rev = e.rev != null ? ` · rev=${e.rev}` : "";
+  return `${label}<br>a=${a} AU · e=${fmt(e.e, 4)}` +
+    `<br>i=${fmt(e.i_deg, 2)}° · Ω=${fmt(e.raan_deg, 2)}°` +
+    ` · ω=${fmt(e.argp_deg, 2)}° · ν=${fmt(e.nu_deg, 2)}°${rev}`;
+}
+
+function vecLabel(v) {
+  return Array.isArray(v) && v.length === 3
+    ? v.map(x => fmt(x, 3)).join(", ") : "–";
+}
+
 async function renderPlot(jid) {
   if (!state.plotlyReady || typeof Plotly === "undefined") {
     $("chart").innerHTML = "<p>Plotly 未加载</p>";
@@ -952,6 +966,11 @@ async function renderPlot(jid) {
   traces.push({ type: "scatter3d", mode: "markers",
     x: p.sun.x, y: p.sun.y, z: p.sun.z, name: "Sun",
     marker: { size: 5, color: "#ffd75e" } });
+  const depByKey = {};
+  (p.legs || []).forEach(leg => {
+    const d = leg.departure;
+    if (d && d.epoch_iso) depByKey[`${leg.from}|${d.epoch_iso}`] = d;
+  });
   (p.bodies || []).forEach((b, bi) => {
     traces.push({ type: "scatter3d", mode: "lines", name: b.tag,
       x: b.orbit.x, y: b.orbit.y, z: b.orbit.z,
@@ -961,9 +980,17 @@ async function renderPlot(jid) {
       const isDeparture = bi === 0 && ei === 0;
       const c3txt = (isDeparture && p.c3 != null)
         ? `\nC3=${fmt(p.c3, 2)} km²/s²` : "";
+      const dep = depByKey[`${b.tag}|${en.iso}`];
       // 悬停只显示 星体+时间(+出发点 C3), 不再显示 x/y/z 坐标
-      const hover = `${b.tag}${when ? "  " + when : ""}` +
+      let hover = `${b.tag}${when ? "  " + when : ""}` +
         (isDeparture && p.c3 != null ? `  C3=${fmt(p.c3, 2)} km²/s²` : "");
+      if (dep) {
+        hover += `<br>v_out=(${vecLabel(dep.v_out_kmps)}) km/s` +
+          `<br>v∞=(${vecLabel(dep.vinf_out_kmps)}) km/s`;
+      }
+      if (p.arrival && en.iso === p.arrival.epoch_iso) {
+        hover += `<br>到达 v∞=(${vecLabel(p.arrival.vinf_in_kmps)}) km/s`;
+      }
       traces.push({ type: "scatter3d", mode: "markers+text", name: b.tag + " 交会",
         x: [en.x], y: [en.y], z: [en.z],
         text: [`${b.tag}\n${when}${c3txt}`],
@@ -973,13 +1000,24 @@ async function renderPlot(jid) {
   });
   (p.legs || []).forEach((leg, i) => {
     const bl = leg.ballistic || {};
-    if ((bl.x || []).length) traces.push({ type: "scatter3d", mode: "lines",
-      name: `leg${i + 1} 弹道`, x: bl.x, y: bl.y, z: bl.z,
-      line: { color: "#f9a8d4", width: 3 } });
+    const orb = leg.orbits || {};
+    const blHover = orbitLabel(`leg #${i + 1}`, orb.ballistic);
+    if ((bl.x || []).length) {
+      const tr = { type: "scatter3d", mode: "lines",
+        name: `leg${i + 1} 弹道`, x: bl.x, y: bl.y, z: bl.z,
+        line: { color: "#f9a8d4", width: 3 } };
+      if (blHover) { tr.hovertext = bl.x.map(() => blHover); tr.hoverinfo = "text"; }
+      traces.push(tr);
+    }
     const lm = leg.lambert || {};
-    if ((lm.x || []).length) traces.push({ type: "scatter3d", mode: "lines",
-      name: `leg${i + 1} Lambert`, x: lm.x, y: lm.y, z: lm.z,
-      line: { color: "#f78fbe", width: 3, dash: "dot" } });
+    const lmHover = orbitLabel(`leg #${i + 1}`, orb.lambert);
+    if ((lm.x || []).length) {
+      const tr = { type: "scatter3d", mode: "lines",
+        name: `leg${i + 1} Lambert`, x: lm.x, y: lm.y, z: lm.z,
+        line: { color: "#f78fbe", width: 3, dash: "dot" } };
+      if (lmHover) { tr.hovertext = lm.x.map(() => lmHover); tr.hoverinfo = "text"; }
+      traces.push(tr);
+    }
     const dsm = leg.dsm || {};
     if (dsm.x != null) {
       const when = dsm.iso ? dsm.iso.slice(0, 19) : "";

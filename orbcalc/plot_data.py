@@ -12,6 +12,7 @@ import numpy as np
 import pykep as pk
 
 from . import MJD2000_MAX, MJD2000_MIN
+from .decode_report import leg_details
 from .planets import get_planet
 
 MJD_LO, MJD_HI = MJD2000_MIN, MJD2000_MAX
@@ -80,6 +81,8 @@ def build_plot_json(cfg, info):
     seq = cfg.seq
     epochs = info["epochs"]
     t_mid = 0.5 * (epochs[0] + epochs[-1])
+    details = leg_details(info, cfg, planet_getter=get_planet)
+    by_index = {d["index"]: d for d in details["legs"]}
 
     bodies = []
     seen = {}
@@ -135,14 +138,18 @@ def build_plot_json(cfg, info):
             dsm["rtn"] = [float(c) for c in rtn_all[i]]
         if i < len(rpn_all):
             dsm["rpn"] = [float(c) for c in rpn_all[i]]
-        legs.append({
+        leg_data = {
             "from": cfg.seq[i], "to": cfg.seq[i + 1],
             "ballistic": bal, "lambert": lam,
             "dsm": dsm,
-        })
+        }
+        if i in by_index:
+            leg_data["orbits"] = by_index[i]["orbits"]
+            leg_data["departure"] = by_index[i]["departure"]
+        legs.append(leg_data)
 
     vinf_launch = info.get("vinf_launch")
-    return {
+    result = {
         "name": cfg.name,
         "units": "AU",
         "sun": {"x": [0.0], "y": [0.0], "z": [0.0]},
@@ -154,6 +161,9 @@ def build_plot_json(cfg, info):
         "c3": round((vinf_launch / 1000.0) ** 2, 3) if vinf_launch is not None else None,
         "dsm_arrow_au": DSM_ARROW_AU,
     }
+    if details["arrival"]:
+        result["arrival"] = details["arrival"]
+    return result
 
 
 def render_png(cfg, info, path):

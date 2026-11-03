@@ -5,10 +5,12 @@ decode/report 逐位一致, 报告文本改为 cfg 驱动; 另输出结构化 su
 """
 from __future__ import annotations
 
+import math
+
 import numpy as np
 import pykep as pk
 
-from .planets import planet_safe_radius
+from .planets import get_planet, planet_safe_radius
 
 
 def _rtn_components(r, v, vec):
@@ -117,6 +119,90 @@ def _leg_labels(cfg):
     return names
 
 
+def orbital_elements(r0, v0, mu=pk.MU_SUN):
+    """状态矢量 (m, m/s) -> 经典六根数; a [AU], 角度 [deg]。"""
+    try:
+        a, e, inc, raan, argp, nu = pk.ic2par(
+            [list(map(float, r0)), list(map(float, v0))], mu)
+    except Exception:
+        return {"a_au": None, "e": None, "i_deg": None,
+                "raan_deg": None, "argp_deg": None, "nu_deg": None}
+    return {
+        "a_au": round(float(a) / pk.AU, 6),
+        "e": round(float(e), 6),
+        "i_deg": round(math.degrees(float(inc)), 3),
+        "raan_deg": round(math.degrees(float(raan)) % 360.0, 3),
+        "argp_deg": round(math.degrees(float(argp)) % 360.0, 3),
+        "nu_deg": round(math.degrees(float(nu)) % 360.0, 3),
+    }
+
+
+def _vec_kmps(v):
+    return [round(float(c) / 1000.0, 6) for c in v]
+
+
+def leg_details(info, cfg, planet_getter=None):
+    """每腿两段轨道根数 + 每次出发的出射矢量 + 最终到达入射 v∞。"""
+    from .mga import lambert_revs
+
+    planet_getter = planet_getter or get_planet
+    names = _leg_labels(cfg)
+    blegs = info.get("blegs") or []
+    bep = info.get("bep") or []
+    tofs = info.get("tofs") or []
+    types = list(getattr(cfg, "lambert_types", []) or [])
+    legs = []
+    for i in range(len(tofs)):
+        if 2 * i + 1 >= len(blegs) or 2 * i + 1 >= len(bep):
+            break
+        r_dep, v_dep = blegs[2 * i]
+        r_dsm, v_lam = blegs[2 * i + 1]
+        t_dep, t_dsm = bep[2 * i], bep[2 * i + 1]
+        _, v_pl = planet_getter(cfg.seq[i]).eph(pk.epoch(t_dep))
+        vinf_out = [float(v_dep[j]) - float(v_pl[j]) for j in range(3)]
+        rev = lambert_revs(types[i]) if i < len(types) else 0
+        legs.append({
+            "index": i, "from": names[i], "to": names[i + 1],
+            "orbits": {
+                "ballistic": {**orbital_elements(r_dep, v_dep),
+                              "epoch_iso": str(pk.epoch(t_dep).to_datetime())},
+                "lambert": {**orbital_elements(r_dsm, v_lam),
+                            "epoch_iso": str(pk.epoch(t_dsm).to_datetime()),
+                            "rev": int(rev)},
+            },
+            "departure": {
+                "body": names[i],
+                "epoch_iso": str(pk.epoch(t_dep).to_datetime()),
+                "v_out_kmps": _vec_kmps(v_dep),
+                "vinf_out_kmps": _vec_kmps(vinf_out),
+                "vinf_out_mag_kmps": round(float(np.linalg.norm(vinf_out)) / 1000.0, 6),
+            },
+        })
+    arrival = None
+    lamberts = info.get("lamberts") or []
+    epochs = info.get("epochs") or []
+    if lamberts and epochs and tofs and len(types) >= len(tofs):
+        last = len(tofs) - 1
+        try:
+            v_arr = lamberts[last].v1[types[last]]
+            t_arr = epochs[-1]
+            _, v_pl = planet_getter(cfg.seq[-1]).eph(pk.epoch(t_arr))
+            vinf_in = [float(v_arr[j]) - float(v_pl[j]) for j in range(3)]
+            arrival = {
+                "body": names[-1],
+                "epoch_iso": str(pk.epoch(t_arr).to_datetime()),
+                "vinf_in_kmps": _vec_kmps(vinf_in),
+                "vinf_in_mag_kmps": round(float(np.linalg.norm(vinf_in)) / 1000.0, 6),
+            }
+        except (AttributeError, IndexError, TypeError, ValueError):
+            arrival = None
+    return {"legs": legs, "arrival": arrival}
+
+
+def _fmt_vec(v):
+    return ", ".join(f"{float(x):.4f}" for x in v)
+
+
 def report(info, cfg, title="ORBIT SOLUTION (orbcalc)"):
     """文本报告: 与 mp 脚本格式一致, 打印并返回文本 (由 run_cli 写日志)."""
     names = _leg_labels(cfg)
@@ -137,6 +223,33 @@ def report(info, cfg, title="ORBIT SOLUTION (orbcalc)"):
                f"{info['dsm_total']:.1f} m/s   "
                f"[{'DSM ≤ %.0f m/s ✓' % cfg.dsm_limit_ms if ok else 'DSM > %.0f m/s ✗' % cfg.dsm_limit_ms}]")
     out.append(f"|v∞|_arrival      : {info['vinf_arr'] / 1000:.4f} km/s")
+    details = leg_details(info, cfg)
+    if details["legs"]:
+        out.append("-" * 78)
+        out.append("LEG ORBITS / DEPARTURES (heliocentric ecliptic J2000)")
+        for d in details["legs"]:
+            out.append(f"  Leg {d['index']} {d['from']}->{d['to']}")
+            for key, label in (("ballistic", "departure->DSM"),
+                               ("lambert", "DSM->arrival")):
+                e = d["orbits"][key]
+                if e["a_au"] is None:
+                    out.append(f"    {label:<18} (无法计算)")
+                    continue
+                rev = f"  rev={e['rev']}" if "rev" in e else ""
+                out.append(
+                    f"    {label:<18} a={e['a_au']:.6f} AU  e={e['e']:.6f}  "
+                    f"i={e['i_deg']:.3f}°  Ω={e['raan_deg']:.3f}°  "
+                    f"ω={e['argp_deg']:.3f}°  ν={e['nu_deg']:.3f}°{rev}")
+            dep = d["departure"]
+            out.append(f"    departure {dep['body']:<8} "
+                       f"v_out=({_fmt_vec(dep['v_out_kmps'])}) km/s  "
+                       f"v∞=({_fmt_vec(dep['vinf_out_kmps'])}) km/s  "
+                       f"|v∞|={dep['vinf_out_mag_kmps']:.4f} km/s")
+        if details["arrival"]:
+            a = details["arrival"]
+            out.append(f"  Arrival {a['body']:<8} "
+                       f"v∞=({_fmt_vec(a['vinf_in_kmps'])}) km/s  "
+                       f"|v∞|={a['vinf_in_mag_kmps']:.4f} km/s")
     for i, nm in enumerate(names[1:-1]):
         tag = cfg.seq[i + 1]
         safe = planet_safe_radius(tag, cfg)
@@ -164,6 +277,8 @@ def summarize(info, cfg):
     rtn_all = info.get("dsm_rtn") or []
     rpn_all = info.get("dsm_rpn") or []
     bep = info.get("bep") or []
+    details = leg_details(info, cfg)
+    by_index = {d["index"]: d for d in details["legs"]}
     for i in range(len(info["tofs"])):
         leg = {
             "from": names[i], "to": names[i + 1],
@@ -179,6 +294,9 @@ def summarize(info, cfg):
             leg["dsm_rtn_ms"] = [round(float(c), 2) for c in rtn_all[i]]
         if i < len(rpn_all):
             leg["dsm_rpn_ms"] = [round(float(c), 2) for c in rpn_all[i]]
+        if i in by_index:
+            leg["orbits"] = by_index[i]["orbits"]
+            leg["departure"] = by_index[i]["departure"]
         legs.append(leg)
     flybys = []
     for i, nm in enumerate(names[1:-1]):
@@ -197,7 +315,7 @@ def summarize(info, cfg):
             item["min_alt_km"] = round((safe - R) / 1000.0, 1)
             item["alt_ok"] = bool((rp * R) >= safe)
         flybys.append(item)
-    return {
+    result = {
         "name": cfg.name,
         "sequence": names,
         "tof_d": round(total_d, 1),
@@ -214,3 +332,6 @@ def summarize(info, cfg):
         "legs": legs,
         "flybys": flybys,
     }
+    if details["arrival"]:
+        result["arrival"] = details["arrival"]
+    return result

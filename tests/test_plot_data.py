@@ -102,6 +102,8 @@ def test_build_plot_json_dsm_direction(monkeypatch):
     }
     data = plot_data.build_plot_json(cfg, info)
     assert data["dsm_arrow_au"] == plot_data.DSM_ARROW_AU
+    assert data["legs"][0]["orbits"]["ballistic"]["a_au"] is not None
+    assert len(data["legs"][0]["departure"]["v_out_kmps"]) == 3
     dsm = data["legs"][0]["dsm"]
     assert dsm["vec"] == pytest.approx(delta, abs=1e-6)
     assert dsm["rtn"] == [1.0, 2.0, 3.0]
@@ -123,23 +125,48 @@ def test_build_plot_json_dsm_direction(monkeypatch):
     assert "vec" not in dsm2 and "unit" not in dsm2
 
 
-def test_summarize_includes_rtn():
-    from orbcalc.decode_report import summarize
+def test_summarize_includes_rtn(monkeypatch):
+    import pykep as pk
+
+    from orbcalc import decode_report
+    from orbcalc.decode_report import report, summarize
+
+    class _FakePlanet:
+        def eph(self, when):
+            return [pk.AU, 0.0, 0.0], [0.0, 0.0, 0.0]
+
+    monkeypatch.setattr(decode_report, "get_planet", lambda tag: _FakePlanet())
 
     cfg = SimpleNamespace(name="t", seq=["EARTH", "MARS"], dsm_limit_ms=600.0, lambert_types=[0])
+    mu = pk.MU_SUN
+    r0 = [pk.AU, 0.0, 0.0]
+    v0 = [0.0, math.sqrt(mu / pk.AU), 0.0]
+    r_dsm, v_lam = pk.propagate_lagrangian([r0, v0], 50.0 * pk.DAY2SEC, mu)
     info = {
         "t0": 0.0, "tofs": [100.0], "epochs": [0.0, 100.0],
         "dsm": [10.0], "dsm_total": 10.0,
         "vinf_launch": 3000.0, "vinf_arr": 1000.0,
         "etas": [0.5], "dsm_rtn": [[1.0, 2.0, 3.0]], "dsm_rpn": [[4.0, 5.0, 6.0]],
         "bep": [0.0, 50.0],
+        "blegs": [(r0, v0), (r_dsm, v_lam)],
+        "lamberts": [SimpleNamespace(v1=[v_lam])],
     }
     out = summarize(info, cfg)
     assert out["legs"][0]["dsm_rtn_ms"] == [1.0, 2.0, 3.0]
     assert out["legs"][0]["dsm_rpn_ms"] == [4.0, 5.0, 6.0]
-    import pykep as pk
+    assert out["legs"][0]["orbits"]["ballistic"]["a_au"] == pytest.approx(1.0, abs=1e-6)
+    assert out["legs"][0]["orbits"]["ballistic"]["e"] == pytest.approx(0.0, abs=1e-6)
+    assert out["legs"][0]["orbits"]["lambert"]["rev"] == 0
+    assert len(out["legs"][0]["departure"]["v_out_kmps"]) == 3
+    assert out["legs"][0]["departure"]["vinf_out_mag_kmps"] == pytest.approx(
+        math.sqrt(sum(c * c for c in v0)) / 1000.0, rel=1e-6)
+    assert out["arrival"]["vinf_in_mag_kmps"] > 0
     assert out["legs"][0]["dsm_iso"] == str(pk.epoch(50.0).to_datetime())
     assert out["legs"][0]["dsm_elapsed_d"] == 50.0
+
+    txt = report(info, cfg)
+    assert "LEG ORBITS / DEPARTURES" in txt
+    assert "departure Earth" in txt and "Arrival Mars" in txt
 
 
 def test_summarize_flyby_arrival_time_and_dsm_elapsed():
