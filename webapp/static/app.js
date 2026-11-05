@@ -23,6 +23,9 @@ async function jfetch(url, opts) {
 function escapeHtml(s) {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
+function escAttr(s) {
+  return escapeHtml(s).replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
 function fmtTS(epochSec) {
   if (epochSec == null) return "";
   const d = new Date(epochSec * 1000);
@@ -44,39 +47,45 @@ const PLANETS = {
 
 /* ---------- 状态 ---------- */
 const state = {
-  jobs: [], activeJobId: null, pollTimer: null, plotlyReady: false,
+  jobs: [], presets: null,
+  activeJobId: null, forkSourceId: null, presetLocked: false,
+  pollTimer: null, listTimer: null,
+  view: "history", detailTab: "data",
+  resultJobId: null, plottedJobId: null,
+  completedSeen: new Set(),
+  failedImages: new Set(),
+  plotlyReady: false,
   seq: [], pendingTofBounds: null, pendingLambert: null, busy: false, showDsmDir: true,
   timeMode: "elapsed", dsmMode: "total", arriveMode: "elapsed", lastResult: null,
-  bodies: null,   // /api/bodies: 可用天体 (内置行星 ∪ 已启用 kernel 天体)
+  bodies: null,
+  jobSearch: "",
 };
 
 /* ============================================================
  * 预设与配置表单
  * ============================================================ */
-/* 启动时默认载入的预设标题; 不在列表里则回退到第一个 */
 const DEFAULT_PRESET = "EVVEJS 1997-01";
 
 async function loadPresets() {
   try {
     const p = await jfetch("/api/presets");
+    state.presets = p || {};
     const sel = $("presetSelect");
-    const names = Object.keys(p || {});
+    const names = Object.keys(state.presets);
     sel.innerHTML = "";
     names.forEach(name => {
       const opt = document.createElement("option");
       opt.value = name; opt.textContent = name;
       sel.appendChild(opt);
     });
-    // 优先载入指定默认预设 (不依赖文件名排序), 不存在时回退到第一个
     const chosen = names.includes(DEFAULT_PRESET) ? DEFAULT_PRESET : names[0];
     if (chosen) {
-      sel.value = chosen;        // 下拉显示与表单内容保持一致 (程序改 value 不触发 change)
-      fillTrajForm(p[chosen]);
+      sel.value = chosen;
+      fillTrajForm(state.presets[chosen]);
     }
   } catch (e) { console.error("presets", e); }
 }
 
-/* 全局计算配置: 唯一一份, 表单初始值来源 (每次提交任务后由后端自动更新) */
 async function loadCompCfg() {
   try {
     const c = await jfetch("/api/compcfg");
@@ -117,13 +126,11 @@ function fillCompForm(cfg) {
   $("cfgScanKeepPctOut").value = $("cfgScanKeepPct").value;
   $("cfgRefineKeepPct").value = cfg.refine_keep_pct || 80;
   $("cfgRefineKeepPctOut").value = $("cfgRefineKeepPct").value;
-  $("cfgEraStep").value = cfg.era_step_d || 60;   // 搜索步进 (天)
+  $("cfgEraStep").value = cfg.era_step_d || 60;
   updateConfigJson();
 }
 
 /* ---------- 序列节点编辑器 ---------- */
-/* 转移类型: 每腿 TOF 表"类型"列的按钮; 点击循环 1/2 -> 3 -> 4。
- * 取值即 cfg.lambert_types 的元素 (= pykep Lambert 解索引, 见 orbcalc/mga.py)。 */
 const LAMBERT_TYPES = [
   { tag: "1/2", title: "单圈转移 (类型 1/2, 解 #0)" },
   { tag: "3",   title: "一圈低能转移 (类型 3, 解 #1)" },
@@ -171,10 +178,9 @@ function buildSeqEditor(seq, tofBounds, lambertTypes) {
     wrap.appendChild(row);
   });
   refreshSeqRoles();
-  refreshPlanetOptions();      // 建立/刷新检索列表
+  refreshPlanetOptions();
 }
 
-/* 每腿转移类型 (按 TOF 表逐行读取, data-leg 即腿序) */
 function readLegLambert() {
   const arr = [];
   document.querySelectorAll("#tofTable .leg-lam").forEach(b => {
@@ -183,13 +189,12 @@ function readLegLambert() {
   return arr;
 }
 
-/* 可用天体: 优先 /api/bodies (含 kernel 天体), 未加载时回退内置 8 大行星 */
 function bodyTags() {
   return (state.bodies && Object.keys(state.bodies).length)
     ? Object.keys(state.bodies) : Object.keys(PLANETS);
 }
 function bodyLabel(tag) {
-  if (PLANETS[tag]) return PLANETS[tag].label;                 // 内置中文标签优先
+  if (PLANETS[tag]) return PLANETS[tag].label;
   const b = state.bodies && state.bodies[tag];
   return (b && b.label) ? b.label : tag;
 }
@@ -201,7 +206,6 @@ function bodyNote(tag) {
 async function loadBodies() {
   try { state.bodies = await jfetch("/api/bodies"); } catch (e) { state.bodies = null; }
 }
-/* 启用星历变化后, 刷新各节点显示名 (保留当前 TAG) */
 function refreshPlanetOptions() {
   document.querySelectorAll('#seqNodes .node-row [data-k="tag"]').forEach(inp => {
     if (inp.dataset.tag) inp.value = bodyLabel(inp.dataset.tag);
@@ -229,7 +233,6 @@ function setActive(menu, idx) {
   if (idx >= 0 && opts[idx]) opts[idx].scrollIntoView({ block: "nearest" });
 }
 
-/* 打开检索列表; q 为空显示全部 (聚焦时) */
 function openMenu(inp, q = "") {
   const menu = menuFor(inp);
   if (!menu) return;
@@ -252,7 +255,6 @@ function chooseTag(inp, tag) {
   updateConfigJson();
 }
 
-/* 输入框文字 -> 可用 TAG (支持 TAG、显示名, 大小写不敏感) */
 function resolveTag(text) {
   const s = String(text || "").trim();
   if (!s) return null;
@@ -264,7 +266,6 @@ function resolveTag(text) {
   return tags.find(t => t.toLowerCase() === low) || null;
 }
 
-/* 提交输入框: 解析成功则规范化显示名, 否则静默回退到上一个 TAG */
 function commitTagInput(inp) {
   const tag = resolveTag(inp.value);
   if (tag) {
@@ -281,7 +282,6 @@ function rowTag(row) {
   return (inp && inp.dataset.tag) || "";
 }
 
-/* 重新计算角色/设置 (行星变化或增删移后) */
 function refreshSeqRoles() {
   const rows = [...document.querySelectorAll("#seqNodes .node-row")];
   state.seq = rows.map(r => rowTag(r));
@@ -299,14 +299,12 @@ function refreshSeqRoles() {
     del.style.visibility = rows.length <= 2 ? "hidden" : "visible";
     const up = row.querySelector(".node-move.up");
     const dn = row.querySelector(".node-move.dn");
-    // 任意节点均可上/下移, 仅受首尾边界限制
     if (up) up.style.visibility = i > 0 ? "visible" : "hidden";
     if (dn) dn.style.visibility = i < rows.length - 1 ? "visible" : "hidden";
   });
   buildTofTable(rows.length - 1);
 }
 
-/* 交换相邻节点位置 (dir: -1 上移, +1 下移); 出发点/到达点也可移动 */
 function moveNode(i, dir) {
   const wrap = $("seqNodes");
   const rows = [...wrap.children];
@@ -319,7 +317,6 @@ function moveNode(i, dir) {
   updateConfigJson();
 }
 
-/* 每腿 TOF 表 (与 seq 联动) */
 function buildTofTable(nLegs) {
   const tb = $("tofTable");
   tb.innerHTML = "";
@@ -327,7 +324,6 @@ function buildTofTable(nLegs) {
   tbl.innerHTML = "<tr><th>区间</th><th>类型</th><th>最小 (d)</th><th>最大 (d)</th></tr>";
   let lastCfg = {};
   try { lastCfg = JSON.parse($("cfgJsonBox").value || "{}") || {}; } catch (e) { lastCfg = {}; }
-  // 优先级: 预设载入带来的 tof_bounds > 上次表单值 (节点增删时保留编辑) > 默认值
   const def = defaultTofBounds(nLegs);
   const fallback = (i) => [...(def[i] || [60, 5000])];
   const pend = state.pendingTofBounds;
@@ -335,16 +331,14 @@ function buildTofTable(nLegs) {
   if (pend && pend.length === nLegs) {
     arr = pend.map((b, i) => (Array.isArray(b) ? [...b] : fallback(i)));
   } else if (Array.isArray(lastCfg.tof_bounds)) {
-    // 腿数变化时按索引保留已编辑值, 多出的新腿补默认 (不再整体重置)
     arr = lastCfg.tof_bounds.slice(0, nLegs)
       .map((b, i) => (Array.isArray(b) ? [...b] : fallback(i)));
   } else {
     arr = [];
   }
   while (arr.length < nLegs) arr.push(fallback(arr.length));
-  state.pendingTofBounds = null;   // 只消费一次, 后续节点增删走 lastCfg 回退
+  state.pendingTofBounds = null;
 
-  // 每腿转移类型: 同样按索引保留 (预设 > 上次表单值 > 默认 0)
   const pLam = state.pendingLambert;
   let lamArr;
   if (Array.isArray(pLam) && pLam.length === nLegs) {
@@ -377,7 +371,6 @@ function defaultTofBounds(n) {
   return def.slice(0, n).map(b => [...b]);
 }
 
-/* 发射窗口表 (可增可删, 至少保留 1 个) */
 function buildEraTable(eras) {
   const arr = (eras && eras.length) ? eras : [["2029-01-01", "2033-06-30"]];
   const eb = $("eraTable");
@@ -393,7 +386,6 @@ function buildEraTable(eras) {
   });
 }
 
-/* 汇总为配置 JSON */
 function collectConfig() {
   const rows = [...document.querySelectorAll("#seqNodes .node-row")];
   const seq = rows.map(r => rowTag(r));
@@ -407,7 +399,7 @@ function collectConfig() {
   const eras = eraRows.map(r => [
     r.querySelector('[data-k="a"]').value, r.querySelector('[data-k="b"]').value]);
   const objective = $("cfgObjective").value;
-  const obj = {
+  return {
     name: $("cfgName").value.trim(),
     seq,
     safe_radius: {},
@@ -424,7 +416,7 @@ function collectConfig() {
     wl: 2e-5, vinf_launch_limit_ms: 5000,
     wa: 2e-5, vinf_arrival_limit_ms: 9000,
     eras,
-    era_step_d: +$("cfgEraStep").value,          // 搜索步进 (天)
+    era_step_d: +$("cfgEraStep").value,
     jobs: +$("cfgJobs").value,
     run_scan: $("cfgRunScan").checked,
     run_seed: $("cfgRunSeed").checked,
@@ -433,7 +425,6 @@ function collectConfig() {
     scan_keep_pct: +$("cfgScanKeepPct").value,
     refine_keep_pct: +$("cfgRefineKeepPct").value,
   };
-  return obj;
 }
 
 /* ---------- 事件绑定 (序列/era 编辑 / 预设 / 配置) ---------- */
@@ -441,7 +432,7 @@ $("nodeAdd").addEventListener("click", () => {
   const rows = [...document.querySelectorAll("#seqNodes .node-row")];
   if (rows.length >= 10) { alert("序列最多 10 个节点"); return; }
   const row = makeNodeRow("VENUS");
-  $("seqNodes").appendChild(row);   // 行为变更: 追加到末尾 (新节点成为到达)
+  $("seqNodes").appendChild(row);
   refreshSeqRoles();
   updateConfigJson();
 });
@@ -454,7 +445,7 @@ $("seqNodes").addEventListener("click", (e) => {
     return;
   }
   const pick = e.target.closest(".node-pick");
-  if (pick && !e.target.closest('[data-k="tag"]')) {   // 点箭头区域 = 聚焦输入框
+  if (pick && !e.target.closest('[data-k="tag"]')) {
     pick.querySelector('[data-k="tag"]').focus();
     return;
   }
@@ -485,7 +476,7 @@ $("seqNodes").addEventListener("change", (e) => {
 });
 $("seqNodes").addEventListener("input", (e) => {
   if (e.target.matches('[data-k="tag"]')) {
-    openMenu(e.target, e.target.value);       // 边输入边过滤
+    openMenu(e.target, e.target.value);
     return;
   }
   updateConfigJson();
@@ -524,7 +515,7 @@ $("seqNodes").addEventListener("keydown", (e) => {
 $("seqNodes").addEventListener("focusin", (e) => {
   if (e.target.matches('[data-k="tag"]')) {
     e.target.select();
-    openMenu(e.target, "");                   // 聚焦时显示全部
+    openMenu(e.target, "");
   }
 });
 $("seqNodes").addEventListener("focusout", (e) => {
@@ -621,7 +612,6 @@ function updateConfigJson() {
 document.addEventListener("input", e => {
   if (e.target.closest("#tofTable") || e.target.closest("#eraTable")) updateConfigJson();
 });
-// 取消数字输入框的上下键调值 (保留 spinners 移除的 CSS 效果)
 document.addEventListener("keydown", e => {
   if (e.target.matches('input[type="number"]') &&
       (e.key === "ArrowUp" || e.key === "ArrowDown")) {
@@ -639,52 +629,303 @@ $("saveCfg").addEventListener("click", () => {
 });
 
 /* ============================================================
- * 折叠 (任务侧栏 / 任务配置) + 结果表列切换
+ * 页面导航与任务列表
  * ============================================================ */
-const layoutEl = document.querySelector(".layout");
-const LS = window.localStorage;
+function setView(name) {
+  state.view = name;
+  $("viewHistory").classList.toggle("active", name === "history");
+  $("viewDetail").classList.toggle("active", name === "detail");
+  syncListPolling();
+}
 
-function _bindCollapse(btnId, cls, key) {
-  if (LS.getItem(key) === "1") layoutEl.classList.add(cls);
-  $(btnId).addEventListener("click", () => {
-    const on = layoutEl.classList.toggle(cls);
-    LS.setItem(key, on ? "1" : "0");
-    if (typeof Plotly !== "undefined" && $("chart"))
-      setTimeout(() => Plotly.Plots.resize($("chart")), 60);
+function isTerminal(j) {
+  return j && ["done", "failed", "cancelled"].includes(j.status);
+}
+function isSuccess(j) {
+  return j && j.status === "done" && j.has_result && j.result_status === "ok";
+}
+
+function seqShort(j) {
+  if (j && j.seq_short) return j.seq_short;
+  const seq = j && Array.isArray(j.seq) ? j.seq : [];
+  return seq.map(x => String(x || "").slice(0, 1).toUpperCase()).join("") || "—";
+}
+
+function jobCardHtml(j) {
+  const jid = String(j.job_id || "");
+  const status = j.status || "unknown";
+  const seq = seqShort(j);
+  const name = escapeHtml(j.name || jid || "未命名任务");
+  const c3 = j.c3 != null ? `${fmt(j.c3, 2)} km²/s²` : "–";
+  const dsm = j.dsm_total_ms != null ? `${fmt(j.dsm_total_ms, 1)} m/s` : "–";
+  const launch = j.launch_iso ? String(j.launch_iso).slice(0, 10) : "–";
+  const meta = [];
+  if (j.created) meta.push(fmtTS(j.created));
+  if (j.elapsed_s != null) meta.push(`${j.elapsed_s} s`);
+  const failed = state.failedImages.has(jid);
+  const thumb = failed ? "" :
+    `<img src="/api/jobs/${encodeURIComponent(jid)}/trajectory.png" alt="${name}" loading="lazy">`;
+  return `<article class="job-card" data-jid="${escAttr(jid)}">
+    <div class="job-thumb${failed ? " noimg" : ""}">
+      ${thumb}
+      <div class="job-thumb-fallback"><small>暂无轨迹图</small></div>
+      <span class="job-seq">${escapeHtml(seq)}</span>
+      <span class="badge ${status}">${escapeHtml(status)}</span>
+    </div>
+    <div class="job-body">
+      <div class="job-title-row">
+        <span class="job-name" title="${name}">${name}</span>
+        <button class="job-del" title="删除任务 (含产物)">✕</button>
+      </div>
+      <div class="job-stats">
+        <div><span class="k">C3</span><span class="v">${c3}</span></div>
+        <div><span class="k">DSM</span><span class="v">${dsm}</span></div>
+        <div><span class="k">Launch</span><span class="v">${launch}</span></div>
+      </div>
+      <div class="job-meta">${escapeHtml(meta.join(" · "))}</div>
+    </div>
+  </article>`;
+}
+
+function renderJobGrid() {
+  const box = $("jobGrid");
+  const all = state.jobs || [];
+  const q = state.jobSearch.trim().toLowerCase();
+  const jobs = q ? all.filter(j =>
+    String(j.name || "").toLowerCase().includes(q) ||
+    seqShort(j).toLowerCase().includes(q)) : all;
+  if (!all.length) {
+    box.innerHTML = `<div class="empty-state">
+      <h3>暂无历史任务</h3>
+      <p>点击“新建任务”开始配置一次轨道计算。</p>
+      <button class="primary empty-new">＋ 新建任务</button>
+    </div>`;
+    return;
+  }
+  if (!jobs.length) {
+    box.innerHTML = `<div class="empty-state">
+      <h3>未找到匹配任务</h3>
+      <p>尝试其他任务名或序列简写。</p>
+    </div>`;
+    return;
+  }
+  box.innerHTML = jobs.map(jobCardHtml).join("");
+  box.querySelectorAll(".job-thumb img").forEach(img => {
+    img.addEventListener("error", () => {
+      const card = img.closest(".job-card");
+      const jid = card ? card.dataset.jid : "";
+      if (jid) state.failedImages.add(jid);   // 失败后不再自动重试, 等手动刷新
+      const thumb = img.closest(".job-thumb");
+      if (thumb) thumb.classList.add("noimg");
+      img.remove();
+    }, { once: true });
   });
 }
-_bindCollapse("sidebarToggle", "side-collapsed", "pasta.sideCollapsed");
-_bindCollapse("configToggle", "config-collapsed", "pasta.configCollapsed");
 
-// 恢复保存的列切换模式 (控件在表格首行内动态生成)
+async function loadJobList() {
+  try {
+    const jobs = await jfetch("/api/jobs");
+    state.jobs = jobs || [];
+    renderJobGrid();
+  } catch (e) { console.error("jobs", e); }
+  syncListPolling();
+}
+
+function hasActiveJobs() {
+  return (state.jobs || []).some(j =>
+    ["queued", "starting", "running"].includes(j.status));
+}
+function syncListPolling() {
+  if (state.view === "history" && hasActiveJobs()) startListPolling();
+  else stopListPolling();
+}
+function startListPolling() {
+  if (state.listTimer) return;
+  state.listTimer = setInterval(() => {
+    if (state.view === "history") loadJobList();
+    else stopListPolling();
+  }, 5000);
+}
+function stopListPolling() {
+  if (state.listTimer) { clearInterval(state.listTimer); state.listTimer = null; }
+}
+function manualRefreshJobs() {
+  state.failedImages.clear();   // 只有手动刷新才重新尝试失败过的缩略图
+  loadJobList();
+}
+
+async function showHistory() {
+  stopPolling();
+  state.activeJobId = null;
+  state.forkSourceId = null;
+  $("detailName").textContent = "";
+  setView("history");
+  await loadJobList();
+}
+
+function setPresetLocked(locked) {
+  state.presetLocked = !!locked;
+  const body = $("presetBody");
+  if (body) body.toggleAttribute("inert", !!locked);
+  const hint = $("presetLockHint");
+  if (hint) {
+    hint.textContent = "只读 · Fork 后可修改";
+    hint.classList.toggle("hidden", !locked);
+  }
+  $("runBtn").disabled = !!locked;
+}
+
+async function openNewJob() {
+  stopPolling();
+  state.activeJobId = null;
+  state.forkSourceId = null;
+  state.resultJobId = null;
+  state.plottedJobId = null;
+  resetDetailPanes();
+  setPresetLocked(false);
+  $("detailName").textContent = "新建任务";
+  $("forkBtn").classList.add("hidden");
+  setView("detail");
+  await loadPresets();
+  switchDetailTab("preset");
+}
+
+async function loadJobConfig(jid) {
+  try {
+    return await jfetch(`/api/jobs/${encodeURIComponent(jid)}/config.json`);
+  } catch (e) {
+    console.error("job config", e);
+    return null;
+  }
+}
+
+async function openJob(jid) {
+  jid = String(jid || "");
+  if (!jid) return;
+  stopPolling();
+  state.activeJobId = jid;
+  state.forkSourceId = jid;
+  state.resultJobId = null;
+  state.plottedJobId = null;
+  resetDetailPanes();
+  setPresetLocked(true);
+  setView("detail");
+  $("detailName").textContent = jid;
+  $("forkBtn").classList.add("hidden");
+  let j, cfg;
+  try {
+    [j, cfg] = await Promise.all([
+      jfetch(`/api/jobs/${encodeURIComponent(jid)}`),
+      loadJobConfig(jid),
+    ]);
+  } catch (e) {
+    showHistory();
+    return;
+  }
+  if (state.activeJobId !== jid) return;
+  if (cfg) {
+    fillTrajForm(cfg);
+    $("forkBtn").classList.remove("hidden");
+  } else {
+    $("presetLockHint").textContent = "只读";
+  }
+  updateJobDetail(j);
+  const success = isSuccess(j);
+  if (success) state.completedSeen.add(jid);
+  switchDetailTab(success ? "plot" : "data");
+  if (!isTerminal(j)) startPolling();
+}
+window.openJob = openJob;
+
+function forkCurrent() {
+  if (!state.forkSourceId) return;
+  $("cfgName").value = "";   // 留空, 显示 Auto-generated, 提交时由后端自动命名
+  state.activeJobId = null;
+  state.forkSourceId = null;
+  state.resultJobId = null;
+  state.plottedJobId = null;
+  resetDetailPanes();
+  setPresetLocked(false);
+  $("detailName").textContent = "新建任务（分支）";
+  $("forkBtn").classList.add("hidden");
+  updateConfigJson();
+  switchDetailTab("preset");
+}
+
+async function deleteJob(jid) {
+  if (!confirm(`确定删除任务 ${jid}？\n产物 (log/result/plot) 会被一并删除。`)) return;
+  try {
+    const r = await fetch(`/api/jobs/${encodeURIComponent(jid)}`, { method: "DELETE" });
+    if (!r.ok) { alert("删除失败: " + r.status); return; }
+    state.failedImages.delete(jid);
+    if (state.activeJobId === jid) await showHistory();
+    else await loadJobList();
+  } catch (e) { alert("删除失败: " + e.message); }
+}
+
+$("jobGrid").addEventListener("click", (e) => {
+  const del = e.target.closest(".job-del");
+  if (del) {
+    e.stopPropagation();
+    const card = del.closest(".job-card");
+    if (card) deleteJob(card.dataset.jid);
+    return;
+  }
+  if (e.target.closest(".empty-new")) { openNewJob(); return; }
+  const card = e.target.closest(".job-card");
+  if (card) openJob(card.dataset.jid);
+});
+$("jobSearch").addEventListener("input", (e) => {
+  state.jobSearch = e.target.value;
+  renderJobGrid();
+});
+$("newJobBtn").addEventListener("click", openNewJob);
+$("refreshJobs").addEventListener("click", manualRefreshJobs);
+$("backBtn").addEventListener("click", showHistory);
+$("forkBtn").addEventListener("click", forkCurrent);
+
+/* ---------- 详情 Tab ---------- */
+function switchDetailTab(tab) {
+  state.detailTab = tab;
+  const map = [
+    ["preset", "tabPreset", "panePreset"],
+    ["data", "tabData", "paneData"],
+    ["plot", "tabPlot", "panePlot"],
+  ];
+  map.forEach(([key, tabId, paneId]) => {
+    $(tabId).classList.toggle("active", key === tab);
+    $(paneId).classList.toggle("active", key === tab);
+  });
+  if (tab === "data") renderTables();
+  if (tab === "plot") {
+    setTimeout(() => {
+      if (!state.activeJobId) {
+        $("chart").innerHTML = "<p>提交任务后显示轨迹图</p>";
+        return;
+      }
+      if (state.plottedJobId !== state.activeJobId) renderPlot(state.activeJobId);
+      if (typeof Plotly !== "undefined") Plotly.Plots.resize($("chart"));
+    }, 30);
+  }
+}
+$("tabPreset").addEventListener("click", () => switchDetailTab("preset"));
+$("tabData").addEventListener("click", () => switchDetailTab("data"));
+$("tabPlot").addEventListener("click", () => switchDetailTab("plot"));
+
+/* ---------- 结果表列切换 ---------- */
 const LS_KEY = { timeMode: "pasta.timeMode", dsmMode: "pasta.dsmMode", arriveMode: "pasta.arriveMode" };
 Object.entries(LS_KEY).forEach(([k, store]) => {
-  const v = LS.getItem(store);
+  const v = localStorage.getItem(store);
   if (v) state[k] = v;
 });
-// 事件委托: 表格每次重绘都会重建控件, 不能直接绑到按钮
-$("paneResult").addEventListener("click", e => {
+$("paneData").addEventListener("click", e => {
   const b = e.target.closest(".seg button[data-v]");
   if (!b) return;
   const key = b.closest(".seg").dataset.k;
   state[key] = b.dataset.v;
-  if (LS_KEY[key]) LS.setItem(LS_KEY[key], state[key]);
+  if (LS_KEY[key]) localStorage.setItem(LS_KEY[key], state[key]);
   renderTables();
 });
-
-/* ============================================================
- * 日志 / 结果 双 tab
- * ============================================================ */
-function switchTab(tab) {
-  const isLog = tab === "log";
-  $("tabLog").classList.toggle("active", isLog);
-  $("tabResult").classList.toggle("active", !isLog);
-  $("paneLog").classList.toggle("active", isLog);
-  $("paneResult").classList.toggle("active", !isLog);
-  if (!isLog && typeof Plotly !== "undefined") setTimeout(() => Plotly.Plots.resize($("chart")), 60);
-}
-$("tabLog").addEventListener("click", () => switchTab("log"));
-$("tabResult").addEventListener("click", () => switchTab("result"));
 
 /* ============================================================
  * 任务生命周期
@@ -696,7 +937,6 @@ async function submitJob() {
   catch (e) { alert("配置无效: " + e.message); return; }
   state.busy = true;
   $("runBtn").disabled = true;
-  switchTab("log");
   try {
     const r = await fetch("/api/jobs", {
       method: "POST",
@@ -705,92 +945,109 @@ async function submitJob() {
     });
     const j = await r.json();
     if (!r.ok) { alert("提交失败: " + (j.error || r.statusText)); return; }
-    state.activeJobId = j.job_id;
-    loadJobList();
-    startPolling();
+    await loadJobList();
+    await openJob(j.job_id);
   } catch (e) { alert("提交失败: " + e.message); }
-  finally { state.busy = false; $("runBtn").disabled = false; }
+  finally { state.busy = false; $("runBtn").disabled = state.presetLocked; }
 }
 $("runBtn").addEventListener("click", submitJob);
 
-function jobItemHtml(j, active) {
-  const meta = [];
-  if (j.created) meta.push(fmtTS(j.created));
-  if (j.elapsed_s != null) meta.push(j.elapsed_s + " s");
-  return `<div class="job-item ${active ? "active" : ""}" id="jobitem-${escapeHtml(j.job_id)}"
-      onclick="selectJob('${escapeHtml(j.job_id)}')">
-    <div class="job-line1"><span class="badge ${j.status}">${j.status}</span><span class="name">${escapeHtml(j.name || "无任务名")}</span>
-      <button class="job-del" title="删除任务 (含产物)" onclick="deleteJob('${escapeHtml(j.job_id)}', event)">🗑</button></div>
-    <div class="job-meta">${meta.length ? meta.join(" · ") : ""}</div>
-  </div>`;
+function resetDetailPanes() {
+  state.lastResult = null;
+  state.resultJobId = null;
+  $("summaryCards").innerHTML = "";
+  $("legTable").innerHTML = "";
+  $("flybyTable").innerHTML = "";
+  $("jobStateBar").innerHTML = "";
+  $("chart").innerHTML = "";
+  $("logBox").textContent = "（提交任务后显示）";
+  $("logMeta").textContent = "";
+  const sec = $("logSection");
+  sec.open = false;
+  if (sec.parentElement === $("paneData")) $("paneData").appendChild(sec);
+  $("jobSearch").value = state.jobSearch;
 }
 
-/* 删除任务: 终止(若在跑) + 删 runs/<jid> 产物 + 移出列表 */
-async function deleteJob(jid, ev) {
-  if (ev) ev.stopPropagation();   // 不触发选中
-  if (!confirm(`确定删除任务 ${jid}？\n产物 (log/result/plot) 会被一并删除。`)) return;
-  try {
-    const r = await fetch(`/api/jobs/${encodeURIComponent(jid)}`, { method: "DELETE" });
-    if (!r.ok) { alert("删除失败: " + r.status); return; }
-    if (state.activeJobId === jid) { state.activeJobId = null; stopPolling(); }
-    await loadJobList();
-  } catch (e) { alert("删除失败: " + e.message); }
+function renderStateBar(j) {
+  const bits = [`<span class="badge ${j.status || "unknown"}">${escapeHtml(j.status || "unknown")}</span>`];
+  if (j.name) bits.push(escapeHtml(j.name));
+  if (j.seq_short) bits.push(escapeHtml(j.seq_short));
+  if (j.elapsed_s != null) bits.push(`耗时 ${j.elapsed_s} s`);
+  if (j.jobs != null) bits.push(`${j.jobs} workers`);
+  $("jobStateBar").innerHTML = bits.join('<span class="dot">·</span>');
 }
-window.deleteJob = deleteJob;
 
-function selectJob(jid) {
-  state.activeJobId = jid;
-  [...document.querySelectorAll("#jobList .job-item")].forEach(el =>
-    el.classList.toggle("active", el.id === "jobitem-" + jid));
-  refreshJobDetail();
+function setLogText(j) {
+  const box = $("logBox");
+  box.textContent = (j.log_tail || []).join("\n");
+  if ($("logSection").open) box.scrollTop = box.scrollHeight;
+  const n = j.log_len != null ? j.log_len : (j.log_tail || []).length;
+  $("logMeta").textContent = n ? `${n} 行` : "";
 }
-window.selectJob = selectJob;
 
-async function refreshJobDetail() {
-  if (!state.activeJobId) return;
-  let j;
-  try { j = await jfetch("/api/jobs/" + state.activeJobId); }
-  catch (e) { return; }
-  const item = $("jobitem-" + state.activeJobId);
-  if (item) item.outerHTML = jobItemHtml(j, true);
-  state.jobs = (state.jobs || []).map(x => x.job_id === j.job_id ? j : x);
-  $("logBox").textContent = (j.log_tail || []).join("\n");
-  $("logBox").scrollTop = $("logBox").scrollHeight;
-  if (j.status === "done" && j.has_result) {
-    renderResult(j.job_id);
-    stopPolling();
-    switchTab("result");   // 计算完成自动切到结果
-  } else if (["failed", "cancelled"].includes(j.status)) {
-    stopPolling();
-    if (j.status === "failed") {
-      switchTab("log");
-      $("logBox").textContent += "\n\n[状态: failed — 见上方日志末尾错误]";
-    }
-    $("summaryCards").innerHTML = `<div class="card bad"><div class="k">状态</div>
-      <div class="v">${j.status}</div></div>`;
+function setLogLayout(success) {
+  const sec = $("logSection");
+  const pane = $("paneData");
+  if (success) {
+    sec.open = false;
+    pane.appendChild(sec);
+  } else {
+    sec.open = true;
+    pane.prepend(sec);
   }
 }
 
-async function startPolling() {
+function updateJobDetail(j) {
+  if (!j || state.activeJobId !== j.job_id) return;
+  state.jobs = (state.jobs || []).map(x =>
+    x.job_id === j.job_id ? { ...x, ...j } : x);
+  $("detailName").textContent = j.name || j.job_id;
+  renderStateBar(j);
+  setLogText(j);
+  const success = isSuccess(j);
+  const terminal = isTerminal(j);
+  if (j.status === "done" && j.has_result) {
+    if (state.resultJobId !== j.job_id) renderResult(j.job_id);
+  } else {
+    state.lastResult = null;
+    state.resultJobId = null;
+    renderTables();
+    $("chart").innerHTML = "";
+    if (["failed", "cancelled"].includes(j.status)) {
+      $("summaryCards").innerHTML = `<div class="card bad"><div class="k">状态</div>
+        <div class="v">${escapeHtml(j.status)}</div></div>`;
+    } else {
+      $("summaryCards").innerHTML = `<div class="card wide"><div class="k">状态</div>
+        <div class="v">${escapeHtml(j.status || "starting")} · 计算中…</div></div>`;
+    }
+  }
+  setLogLayout(success);
+  if (terminal) stopPolling();
+}
+
+async function refreshJobDetail() {
+  const jid = state.activeJobId;
+  if (!jid) return;
+  let j;
+  try { j = await jfetch("/api/jobs/" + encodeURIComponent(jid)); }
+  catch (e) { return; }
+  if (state.activeJobId !== jid) return;
+  updateJobDetail(j);
+  if (isTerminal(j)) {
+    stopPolling();
+    if (isSuccess(j) && !state.completedSeen.has(jid)) {
+      state.completedSeen.add(jid);
+      if (state.detailTab !== "plot") switchDetailTab("plot");
+    }
+  }
+}
+
+function startPolling() {
   stopPolling();
   state.pollTimer = setInterval(refreshJobDetail, 1500);
 }
 function stopPolling() {
   if (state.pollTimer) { clearInterval(state.pollTimer); state.pollTimer = null; }
-}
-$("refreshJobs").addEventListener("click", loadJobList);
-
-async function loadJobList() {
-  try {
-    const jobs = await jfetch("/api/jobs");
-    state.jobs = jobs;
-    const box = $("jobList");
-    box.innerHTML = "";
-    jobs.forEach(j => {
-      box.insertAdjacentHTML("beforeend",
-        jobItemHtml(j, j.job_id === state.activeJobId));
-    });
-  } catch (e) { console.error(e); }
 }
 
 /* 取消当前任务 */
@@ -800,55 +1057,60 @@ cancelBtn.textContent = "取消当前任务";
 cancelBtn.onclick = async () => {
   if (!state.activeJobId) return;
   try {
-    await fetch(`/api/jobs/${state.activeJobId}/cancel`, { method: "POST" });
+    await fetch(`/api/jobs/${encodeURIComponent(state.activeJobId)}/cancel`, { method: "POST" });
   } catch (e) { console.error(e); }
 };
-$("paneLog").querySelector(".actions").appendChild(cancelBtn);
+$("logActions").appendChild(cancelBtn);
 
 /* ============================================================
- * 结果渲染 (两行紧凑布局)
+ * 结果渲染
  * ============================================================ */
 async function renderResult(jid) {
   let r;
-  try { r = await jfetch(`/api/jobs/${jid}/result.json`); }
+  try { r = await jfetch(`/api/jobs/${encodeURIComponent(jid)}/result.json`); }
   catch (e) { return; }
+  if (state.activeJobId !== jid) return;
   const cards = $("summaryCards");
-  // 非 ok 结果 (如 no_candidates): 只报状态, 不渲染轨迹卡/表格/图
   if (r.status && r.status !== "ok") {
     cards.innerHTML = `<div class="card bad"><div class="k">状态</div>
       <div class="v">${escapeHtml(r.status)}</div></div>
       <div class="card wide"><div class="k">说明</div>
       <div class="v">${escapeHtml(r.error || "无可行解，未生成轨迹")}</div></div>`;
     state.lastResult = null;
-    $("legTable").innerHTML = ""; $("flybyTable").innerHTML = "";
+    state.resultJobId = jid;
+    $("legTable").innerHTML = "";
+    $("flybyTable").innerHTML = "";
     $("chart").innerHTML = "<p>无可行解，无轨迹图</p>";
     return;
   }
-  // 行1: 总飞行时间 (年+天合并) | 总 DSM   (无独立 DSM 限制框; 出射 v∞ 已在下方给出)
-  // 行2: 左 = 发射时间·出射v∞, 右 = 到达时间·入射v∞
+  const c3 = r.c3 != null ? r.c3
+    : (r.vinf_launch_kmps != null ? Math.pow(r.vinf_launch_kmps, 2) : null);
   cards.innerHTML = `
     <div class="card ${r.dsm_ok ? "ok" : "bad"}"><div class="k">总飞行时间</div>
       <div class="v">${fmt(r.tof_yr, 3)} yr (${fmt(r.tof_d, 1)} d)</div></div>
     <div class="card ${r.dsm_ok ? "ok" : "bad"}"><div class="k">总 DSM</div>
       <div class="v">${fmt(r.dsm_total_ms, 1)} m/s</div></div>
+    <div class="card ${r.dsm_ok ? "ok" : "bad"}"><div class="k">发射 C3</div>
+      <div class="v">${fmt(c3, 2)} km²/s²</div></div>
     <div class="card wide"><div class="k">发射</div>
       <div class="v">${r.launch_iso ? r.launch_iso.slice(0, 10) : "–"}<br>v∞ ${fmt(r.vinf_launch_kmps, 4)} km/s</div></div>
     <div class="card wide"><div class="k">到达</div>
       <div class="v">${r.arrival_iso ? r.arrival_iso.slice(0, 10) : "–"}<br>v∞ ${fmt(r.vinf_arrival_kmps, 4)} km/s</div></div>`;
-
   state.lastResult = r;
+  state.resultJobId = jid;
   renderTables();
-  renderPlot(jid);
+  if (state.detailTab === "plot") {
+    state.plottedJobId = null;
+    renderPlot(jid);
+  }
 }
 
-/* 结果表按当前切换模式重绘 (时间: T+/Datetime; DSM: Total/Vector) */
 function renderTables() {
   const r = state.lastResult;
   if (!r || (r.status && r.status !== "ok")) return;
-  const timeMode = state.timeMode;   // elapsed | datetime
-  const dsmMode = state.dsmMode;     // total | vector
+  const timeMode = state.timeMode;
+  const dsmMode = state.dsmMode;
 
-  // ---- 转移信息 ----
   const legs = r.legs || [];
   const legHeads = [
     "从", "到",
@@ -879,7 +1141,6 @@ function renderTables() {
   });
   $("legTable").innerHTML = "<h3>转移信息</h3>" + tableHtml(legHeads, legRows);
 
-  // ---- 飞掠信息 (末行附最终到达天体; 时间列有独立开关) ----
   const arriveMode = state.arriveMode;
   const fly = r.flybys || [];
   const flyHeads = [
@@ -911,7 +1172,6 @@ function tableHtml(heads, rows) {
     rows.map(row => `<tr>${row.map(c => `<td>${c}</td>`).join("")}</tr>`).join("") + "</table>";
 }
 
-/* 分段切换控件 (放在表格首行; 用 data-k 标识切换项) */
 function segHtml(key, opts) {
   return `<span class="seg" data-k="${key}">` + opts.map(([v, label]) =>
     `<button data-v="${v}"${state[key] === v ? ' class="active"' : ""}>${label}</button>`
@@ -922,7 +1182,6 @@ function dsmArrowTrace(tail, unit, L, name) {
   const [x, y, z] = tail;
   const [ux, uy, uz] = unit;
   const tx = x + L * ux, ty = y + L * uy, tz = z + L * uz;
-  // 任取与 unit 不平行的参考轴, 叉乘得垂直基, 用于画两条箭羽
   let rx = 0, ry = 0, rz = 1;
   if (Math.abs(uz) > 0.9) { rx = 1; ry = 0; rz = 0; }
   let px = uy * rz - uz * ry, py = uz * rx - ux * rz, pz = ux * ry - uy * rx;
@@ -959,8 +1218,9 @@ async function renderPlot(jid) {
     return;
   }
   let p;
-  try { p = await jfetch(`/api/jobs/${jid}/plot.json`); }
+  try { p = await jfetch(`/api/jobs/${encodeURIComponent(jid)}/plot.json`); }
   catch (e) { $("chart").innerHTML = "<p>plot.json 不可用</p>"; return; }
+  if (state.activeJobId !== jid) return;
 
   const traces = [];
   traces.push({ type: "scatter3d", mode: "markers",
@@ -981,7 +1241,6 @@ async function renderPlot(jid) {
       const c3txt = (isDeparture && p.c3 != null)
         ? `\nC3=${fmt(p.c3, 2)} km²/s²` : "";
       const dep = depByKey[`${b.tag}|${en.iso}`];
-      // 悬停只显示 星体+时间(+出发点 C3), 不再显示 x/y/z 坐标
       let hover = `${b.tag}${when ? "  " + when : ""}` +
         (isDeparture && p.c3 != null ? `  C3=${fmt(p.c3, 2)} km²/s²` : "");
       if (dep) {
@@ -995,7 +1254,8 @@ async function renderPlot(jid) {
         x: [en.x], y: [en.y], z: [en.z],
         text: [`${b.tag}\n${when}${c3txt}`],
         hovertext: [hover], hoverinfo: "text",
-        textfont: { size: 9 }, marker: { size: 3.5, color: b.color } });
+        textfont: { size: 9, color: "#f0f0f0" },
+        marker: { size: 3.5, color: b.color } });
     });
   });
   (p.legs || []).forEach((leg, i) => {
@@ -1021,7 +1281,6 @@ async function renderPlot(jid) {
     const dsm = leg.dsm || {};
     if (dsm.x != null) {
       const when = dsm.iso ? dsm.iso.slice(0, 19) : "";
-      // 时间/位置放一组, 速度放一组
       let hover = `DSM${i + 1}${when ? "<br>" + when : ""}`;
       if (dsm.eta != null) hover += `<br>eta ${fmt(dsm.eta, 4)}`;
       hover += `<br>总 ${fmt(dsm.dsm_ms, 2)} m/s`;
@@ -1037,7 +1296,8 @@ async function renderPlot(jid) {
         name: `DSM${i + 1}`, x: [dsm.x], y: [dsm.y], z: [dsm.z],
         text: [fmt(dsm.dsm_ms, 0) + " m/s"], hovertext: [hover],
         hoverinfo: "text",
-        textfont: { size: 9 }, marker: { size: 2.5, color: "#b56cff", symbol: "diamond" } });
+        textfont: { size: 9, color: "#f0f0f0" },
+        marker: { size: 2.5, color: "#b56cff", symbol: "diamond" } });
     }
     if (state.showDsmDir && Array.isArray(dsm.unit) && dsm.unit.length === 3) {
       traces.push(dsmArrowTrace([dsm.x, dsm.y, dsm.z], dsm.unit,
@@ -1045,44 +1305,60 @@ async function renderPlot(jid) {
     }
   });
 
+  const axis = {
+    gridcolor: "#3f3f3f",
+    zerolinecolor: "#3f3f3f",
+    color: "#b0b0b0",
+    backgroundcolor: "#1f1f1f",
+    showbackground: true,
+    title: "AU",
+  };
   Plotly.newPlot("chart", traces, {
-    paper_bgcolor: "#0f1420", plot_bgcolor: "#0f1420",
-    font: { color: "#d7e0f0", size: 10 },
+    paper_bgcolor: "#1f1f1f", plot_bgcolor: "#1f1f1f",
+    font: { color: "#f0f0f0", size: 10, family: "Segoe UI, Microsoft YaHei, sans-serif" },
     scene: { aspectmode: "data",
+      bgcolor: "#1f1f1f",
       camera: { eye: { x: -0.1, y: -1.6, z: 0.35 } },
-      xaxis: { title: "AU" }, yaxis: { title: "AU" }, zaxis: { title: "AU" } },
-    margin: { l: 0, r: 0, t: 30, b: 0 },
+      xaxis: { ...axis }, yaxis: { ...axis }, zaxis: { ...axis } },
+    margin: { l: 0, r: 0, t: 36, b: 0 },
     title: { text: `${p.name || "EVVEJU"} · TOF=${fmt(p.tof_yr, 2)} yr · DSM=${fmt(p.dsm_total_ms, 0)} m/s`,
-      font: { size: 12 } },
+      font: { size: 13, color: "#f0f0f0" } },
     showlegend: true,
+    legend: { bgcolor: "rgba(43,43,43,.9)", bordercolor: "#3f3f3f", borderwidth: 1,
+      font: { color: "#f0f0f0", size: 10 } },
   }, { responsive: true });
+  state.plottedJobId = jid;
 }
 
 /* 下载按钮 */
 $("dsmDirToggle").addEventListener("change", (e) => {
   state.showDsmDir = e.target.checked;
-  if (state.activeJobId) renderPlot(state.activeJobId);
+  if (state.activeJobId) {
+    state.plottedJobId = null;
+    renderPlot(state.activeJobId);
+  }
 });
 $("pngDown").addEventListener("click", () => {
-  if (state.activeJobId) window.open(`/api/jobs/${state.activeJobId}/trajectory.png`);
+  if (state.activeJobId)
+    window.open(`/api/jobs/${encodeURIComponent(state.activeJobId)}/trajectory.png`);
 });
 $("jsonDown").addEventListener("click", () => {
-  if (state.activeJobId) window.open(`/api/jobs/${state.activeJobId}/result.json`);
+  if (state.activeJobId)
+    window.open(`/api/jobs/${encodeURIComponent(state.activeJobId)}/result.json`);
 });
 $("logDown").addEventListener("click", () => {
-  if (state.activeJobId) window.open(`/api/jobs/${state.activeJobId}/log.txt`);
+  if (state.activeJobId)
+    window.open(`/api/jobs/${encodeURIComponent(state.activeJobId)}/log.txt`);
 });
 
 /* ============================================================
- * 终止程序 / 关闭确认 / 0.0.0.0 警告 / 系统设置
+ * 终止程序 / 关闭确认 / 系统设置
  * ============================================================ */
 $("shutdownBtn").addEventListener("click", async () => {
   if (!confirm("确定终止后端程序?\n- 运行中的任务会被中断\n- 服务将退出, 之后无法再访问本页面\n- 本标签页将尝试自动关闭\n(以后再次运行程序即可恢复)")) return;
   try {
     await fetch("/api/shutdown", { method: "POST" });
   } catch (e) { /* 连接断开 = 后端已退出 */ }
-  // 顺便关闭标签页: 浏览器只允许脚本自开的窗口被 window.close(),
-  // webbrowser 开的标签可能被忽略, 失败则提示手动关闭。
   try { window.close(); } catch (err) { /* 忽略 */ }
   setTimeout(() => {
     if (!document.hidden) {
@@ -1091,7 +1367,6 @@ $("shutdownBtn").addEventListener("click", async () => {
   }, 600);
 });
 
-// 关闭标签页确认: 有任务在跑时防止误关 (关闭 = 后台继续运行)
 window.addEventListener("beforeunload", (e) => {
   const running = (state.jobs || []).some(j => j.status === "running" || j.status === "queued");
   if (running) {
@@ -1100,7 +1375,6 @@ window.addEventListener("beforeunload", (e) => {
   }
 });
 
-/* 系统设置 / 关于 (同一弹窗, 左侧导航切换) */
 function showModalPane(pane) {
   document.querySelectorAll("#sysModal .side-item").forEach(b =>
     b.classList.toggle("active", b.dataset.pane === pane));
@@ -1126,7 +1400,6 @@ async function loadSysConfig() {
   } catch (e) { console.error(e); }
 }
 
-/* 外部星历: 扫描结果勾选列表 */
 function renderEphemerisList(opts, chosen) {
   const box = $("sysEphemList");
   if (!box) return;
@@ -1170,7 +1443,6 @@ function selectedEphemerides() {
   return [...document.querySelectorAll("#sysEphemList input[type=checkbox]:checked")].map(c => c.value);
 }
 
-/* 关于: 懒加载一次 */
 let aboutLoaded = false;
 function aboutCard(k, v, cls) {
   const val = (v == null || v === "") ? "–" : escapeHtml(String(v));
@@ -1222,7 +1494,6 @@ $("sysOpen").addEventListener("click", async () => {
   showModalPane("settings");
   $("sysModal").classList.remove("hidden");
 });
-$("aboutOpen").addEventListener("click", openAbout);
 $("sysEphemRescan").addEventListener("click", async () => {
   try {
     const r = await fetch("/api/ephemeris/rescan", { method: "POST" });
@@ -1328,11 +1599,9 @@ $("sysHorizonsDownload").addEventListener("click", async () => {
   } catch (e) { msg.textContent = "失败: " + e.message; }
   finally { btn.disabled = false; }
 });
-$("sysClose").addEventListener("click", closeModal);
-$("aboutClose").addEventListener("click", closeModal);
+$("modalClose").addEventListener("click", closeModal);
 $("sysSave").addEventListener("click", async () => {
   const lan = $("sysLan").checked;
-  // 开放到局域网 = 高风险的显式选择: 保存前二次确认
   if (lan && !confirm(
       "⚠ 将监听 0.0.0.0 (开放到局域网):\n- 局域网内任何设备都能访问本页面\n- 本工具无任何鉴权\n- 仅限安全内网使用!\n\n确定保存并重启生效?")) return;
   try {
@@ -1360,12 +1629,42 @@ $("sysEphSave").addEventListener("click", async () => {
     });
     const j = await r.json();
     if (!r.ok) { alert("保存失败: " + (j.error || r.statusText)); return; }
-    await loadBodies(); refreshPlanetOptions();   // 启用星历立即反映到天体下拉
+    await loadBodies(); refreshPlanetOptions();
     alert("已保存");
     closeModal();
   } catch (e) { alert("保存失败: " + e.message); }
 });
-$("sysEphClose").addEventListener("click", closeModal);
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !$("sysModal").classList.contains("hidden")) closeModal();
+});
+
+/* Fluent Reveal: 让高光与边框跟随鼠标, 只在悬停元素附近出现 */
+const REVEAL_SELECTOR = [
+  ".job-card", ".detail-tabs .tab", ".side-item", ".eph-result", ".ephem-item",
+  ".node-row", "details.main-panel > summary", "button.primary", "button.ghost",
+  ".search-box",
+].join(",");
+let revealFrame = 0;
+let revealTarget = null;
+let revealX = 0;
+let revealY = 0;
+document.addEventListener("pointermove", (e) => {
+  const target = e.target;
+  if (!(target instanceof Element)) return;
+  const el = target.closest(REVEAL_SELECTOR);
+  if (!el) return;
+  revealTarget = el;
+  revealX = e.clientX;
+  revealY = e.clientY;
+  if (revealFrame) return;
+  revealFrame = requestAnimationFrame(() => {
+    revealFrame = 0;
+    if (!revealTarget || !revealTarget.isConnected) return;
+    const rect = revealTarget.getBoundingClientRect();
+    revealTarget.style.setProperty("--mx", `${revealX - rect.left}px`);
+    revealTarget.style.setProperty("--my", `${revealY - rect.top}px`);
+  });
+}, { passive: true });
 
 /* ============================================================
  * 初始化
@@ -1374,25 +1673,34 @@ $("sysEphClose").addEventListener("click", closeModal);
   if (typeof Plotly !== "undefined") state.plotlyReady = true;
   else {
     const t = setInterval(() => {
-      if (typeof Plotly !== "undefined") { state.plotlyReady = true; clearInterval(t); }
+      if (typeof Plotly !== "undefined") {
+        state.plotlyReady = true;
+        clearInterval(t);
+        if (state.view === "detail" && state.detailTab === "plot" && state.activeJobId) {
+          state.plottedJobId = null;
+          renderPlot(state.activeJobId);
+        }
+      }
     }, 200);
   }
-  // 系统信息: host/port/版本/0.0.0.0 警告
   try {
     const h = await jfetch("/api/health");
     const ver = h.describe || h.version || "";
-    $("sysInfo").textContent =
-      `${h.host || "127.0.0.1"}:${h.port || 8765}${ver ? " · " + ver : ""}`;
-    $("sysInfo").title = "点击查看关于/build 信息";
-    $("sysInfo").style.cursor = "pointer";
-    $("sysInfo").addEventListener("click", openAbout);
+    const el = $("appVersion");
+    if (el) {
+      el.textContent = ver;
+      el.title = `${h.host || "127.0.0.1"}:${h.port || 8765} · 点击查看关于`;
+      el.addEventListener("click", openAbout);
+      if (!ver) el.classList.add("hidden");
+    }
     if (h.lan) { const b = $("sysLanWarnBanner"); if (b) b.classList.remove("hidden"); }
   } catch (e) { console.error(e); }
-  // 一次性提示: 关标签=后台继续 (可删, 不影响脚本)
-  { const ch = $("closeHint"); if (ch) ch.classList.remove("hidden"); }
   await loadBodies();
-  await loadSysConfig();          // 顶部星历异常横幅 + 设置页列表
+  await loadSysConfig();
   await loadPresets();
   await loadCompCfg();
   await loadJobList();
+  // 首次使用 (没有历史任务) 直接进入新建任务，避免空白页。
+  if (!state.jobs.length) await openNewJob();
+  else setView("history");
 })();

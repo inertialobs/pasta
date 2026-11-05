@@ -257,6 +257,46 @@ class JobManager:
 
     # ------------------------------------------------------------------
     @staticmethod
+    def _read_json(path: Path) -> dict:
+        try:
+            return json.loads(path.read_text(encoding="utf-8")) or {}
+        except (OSError, ValueError):
+            return {}
+
+    @classmethod
+    def _config_summary(cls, d: Path) -> dict:
+        cfg = cls._read_json(d / "request.json")
+        seq = cfg.get("seq") if isinstance(cfg.get("seq"), list) else []
+        if not seq:
+            # 旧任务可能缺少 request.json: 退回 result.json 的 sequence
+            result = cls._read_json(d / "result.json")
+            seq = result.get("sequence") if isinstance(result.get("sequence"), list) else []
+        return {
+            "seq": seq,
+            "seq_short": "".join(str(tag)[:1].upper() for tag in seq if tag),
+        }
+
+    @classmethod
+    def _result_summary(cls, d: Path) -> dict:
+        rf = d / "result.json"
+        if not rf.exists():
+            return {}
+        result = cls._read_json(rf)
+        if not result:
+            return {}
+        out = {"result_status": result.get("status")}
+        for key in ("c3", "dsm_total_ms", "launch_iso", "arrival_iso", "tof_yr"):
+            if key in result:
+                out[key] = result.get(key)
+        # result.json 不一定带 c3 (旧任务/摘要格式), 用出射 v∞ 反算
+        if out.get("c3") is None and result.get("vinf_launch_kmps") is not None:
+            try:
+                out["c3"] = round(float(result["vinf_launch_kmps"]) ** 2, 3)
+            except (TypeError, ValueError):
+                pass
+        return out
+
+    @staticmethod
     def _disk_status(d: Path) -> str:
         # result.json 的 status 字段最权威; cancelled.txt 仅在无结果时作依据
         rf = d / "result.json"
@@ -296,7 +336,7 @@ class JobManager:
             has_result = (d / "result.json").exists()
         except OSError:
             has_result = False
-        return {
+        info = {
             "job_id": jid,
             "name": cfg.get("name", jid),
             "created": self._dir_mtime(d),
@@ -308,6 +348,9 @@ class JobManager:
             "log_tail": all_lines[-250:],
             "log_len": len(all_lines),
         }
+        info.update(self._config_summary(d))
+        info.update(self._result_summary(d))
+        return info
 
     @staticmethod
     def _dir_mtime(d: Path) -> float:
@@ -352,6 +395,8 @@ class JobManager:
         except OSError:
             out["log_tail"] = []
             out["log_len"] = 0
+        out.update(self._config_summary(d))
+        out.update(self._result_summary(d))
         return out
 
     def list(self) -> list[dict]:

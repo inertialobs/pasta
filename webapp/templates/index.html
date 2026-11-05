@@ -8,160 +8,200 @@
 <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
-<header>
-  <div class="brand">
-    <img class="brand-logo" src="/logo.png" alt="PASTA">
-    <div>
-      <h1>PASTA</h1>
-      <div class="sub">Parallel Astrodynamic Solver for Trajectory Analysis (PASTA) 并行天体动力轨道分析求解器</div>
-    </div>
+<header class="appbar">
+  <div class="appbar-brand">
+    <img class="appbar-logo" src="/logo.png" alt="PASTA">
+    <h1>PASTA</h1>
+    <span id="appVersion" class="app-version"></span>
   </div>
-  <!-- <div id="closeHint" class="banner hint hidden">关闭本标签页 = 后端后台继续运行；要停止后端请点右上角「⏹ 终止程序」。</div> -->
-  <div class="header-actions">
-    <button id="sysOpen" class="ghost">系统设置</button>
-    <button id="aboutOpen" class="ghost">关于</button>
-    <button id="shutdownBtn" class="ghost danger">⏹ 终止程序</button>
+  <div class="appbar-actions">
+    <button id="sysOpen" class="icon-btn" title="系统设置" aria-label="系统设置">&#9881;</button>
+    <button id="shutdownBtn" class="icon-btn danger" title="终止程序" aria-label="终止程序">&#9209;</button>
   </div>
-  <span id="sysInfo" class="sys-info"></span>
-  <div id="ephWarnBanner" class="banner warn hidden"></div>
 </header>
 
-<main class="layout">
-  <!-- ================= 左: 可折叠任务边栏 ================= -->
-  <aside id="sidebar" class="sidebar">
-    <div class="sidebar-head">
-      <h2>任务</h2>
-      <button id="sidebarToggle" title="折叠/展开任务边栏">«</button>
+<div id="ephWarnBanner" class="banner warn hidden"></div>
+
+<!-- ================= 历史任务 ================= -->
+<main id="viewHistory" class="view active">
+  <div class="page-head">
+    <div>
+      <h2 class="page-title">历史任务</h2>
+      <p class="page-sub">浏览、搜索并打开已有的轨道计算结果</p>
     </div>
-    <div id="jobList" class="job-list"></div>
-    <div class="actions"><button id="refreshJobs" class="ghost">刷新任务列表</button></div>
-  </aside>
-
-  <!-- ================= 中: 配置面板 ================= -->
-  <section class="panel config">
-    <div class="panel-head">
-      <h2>任务配置</h2>
-      <button id="configToggle" title="折叠/展开任务配置">«</button>
-    </div>
-
-    <!-- 任务名 单独一行 (不属于任何子块) -->
-    <div class="field wide"><label>任务名</label><input id="cfgName" class="wide" value="" placeholder="Auto-generated"></div>
-
-    <!-- ===== 子块 1: 任务序列配置 ===== -->
-    <details class="main-panel" open>
-      <summary>任务序列配置</summary>
-      <div class="preset-inline">
-        <label>预设</label>
-        <select id="presetSelect" class="wide"></select>
-        <button id="presetLoad" class="ghost">加载</button>
-        <button id="presetSave" class="ghost">保存</button>
+    <div class="page-actions">
+      <div class="search-box">
+        <span class="search-icon" aria-hidden="true">&#9906;</span>
+        <input id="jobSearch" type="search" placeholder="搜索任务名或序列..." autocomplete="off">
       </div>
-      <fieldset>
-        <legend>行星序列</legend>
-        <div id="seqNodes" class="seq-nodes"></div>
-        <div class="actions"><button id="nodeAdd" class="ghost">+ 添加节点</button></div>
-      </fieldset>
-      <fieldset>
-        <legend>每腿 TOF 边界</legend>
-        <div id="tofTable"></div>
-      </fieldset>
-      <fieldset>
-        <legend>目标与约束</legend>
-        <div class="field"><label>目标</label>
-          <select id="cfgObjective" class="wide">
-            <option value="min_tof">最短飞行时间 (min TOF)</option>
-            <option value="min_dsm" selected>最小总 DSM (min DSM)</option>
-            <option value="custom">自定义</option>
-          </select>
-        </div>
-        <div id="customWrap" class="checks hidden">
-          <label>TOF 权重 <input id="cfgWToF" type="number" value="1" step="0.1" min="0"></label>
-          <label>DSM 权重 <input id="cfgWDsm" type="number" value="0" step="0.1" min="0"></label>
-          <label>L1 惩罚系数 <input id="cfgPenL1" type="number" value="10" step="1" min="0"></label>
-          <label>L2 惩罚系数 <input id="cfgPenL2" type="number" value="0.2" step="0.1" min="0"></label>
-        </div>
-        <div class="field"><label>DSM 上限</label><input id="cfgDsmLimit" type="number" value="600" step="10"></div>
-        <div class="field"><label>v∞ (km/s)</label>
-          <input id="cfgVinfL" type="number" value="3.5" step="0.1"> ~
-          <input id="cfgVinfH" type="number" value="6.0" step="0.1"></div>
-        <div class="field"><label>eta</label>
-          <input id="cfgEtaL" type="number" value="0.01" step="0.01"> ~
-          <input id="cfgEtaH" type="number" value="0.9" step="0.01"></div>
-        <div class="field"><label>rp 上界 (×R)</label><input id="cfgRpUb" type="number" value="200" step="1"></div>
-        <div class="field"><label>前沿罚 L1/L2</label>
-          <input id="cfgFPenL1" type="number" value="30" step="1" min="0"> ~
-          <input id="cfgFPenL2" type="number" value="2" step="0.1" min="0"></div>
-      </fieldset>
-      <fieldset>
-        <legend>发射窗口 (era)</legend>
-        <div id="eraTable"></div>
-        <button id="eraAdd" class="ghost">+ 窗口</button>
-      </fieldset>
-    </details>
-
-    <!-- ===== 子块 2: 计算配置 ===== -->
-    <details class="main-panel" open>
-      <summary>计算配置</summary>
-      <fieldset>
-        <legend>流水线与模式</legend>
-        <div class="checks">
-          <label><input type="checkbox" id="cfgRunScan" checked> 扫描+细化</label>
-          <label><input type="checkbox" id="cfgRunSeed" checked> 弹道播种</label>
-          <label><input type="checkbox" id="cfgRunCompress" checked> 宽压缩</label>
-          <label><input type="checkbox" id="cfgRunFrontier" checked> 前沿压缩</label>
-        </div>
-      </fieldset>
-      <fieldset>
-        <legend>并行与搜索</legend>
-        <div class="field"><label>jobs</label><input id="cfgJobs" type="number" min="1" max="256"></div>
-        <div class="field"><label>步进 (d)</label><input id="cfgEraStep" type="number" value="60" min="1" max="365"></div>
-        <div class="field"><label>扫描保留 %</label>
-          <div class="range-wrap"><input id="cfgScanKeepPct" type="range" min="1" max="100" step="1" value="80"><output id="cfgScanKeepPctOut">80</output></div></div>
-        <div class="field"><label>细化保留 %</label>
-          <div class="range-wrap"><input id="cfgRefineKeepPct" type="range" min="1" max="100" step="1" value="80"><output id="cfgRefineKeepPctOut">80</output></div></div>
-      </fieldset>
-    </details>
-
-    <div class="actions center">
-      <button id="runBtn" class="primary actions-run">▶ 提交计算</button>
+      <button id="refreshJobs" class="ghost" title="刷新任务列表">刷新</button>
+      <button id="newJobBtn" class="primary">&#65291; 新建任务</button>
     </div>
-    <div class="actions">
-      <button id="saveCfg" class="ghost">保存配置 JSON</button>
+  </div>
+  <div id="jobGrid" class="job-grid"></div>
+</main>
+
+<!-- ================= 任务详情 ================= -->
+<main id="viewDetail" class="view">
+  <div class="detail-tabs">
+    <button id="backBtn" class="back-btn" title="返回任务列表">&#8249; 返回</button>
+    <span class="tab-sep" aria-hidden="true"></span>
+    <button id="tabPreset" class="tab">预设</button>
+    <button id="tabData" class="tab active">数据</button>
+    <button id="tabPlot" class="tab">图示</button>
+    <span id="detailName" class="detail-name"></span>
+  </div>
+
+  <!-- ===== 预设 ===== -->
+  <section id="panePreset" class="pane">
+    <div class="pane-head">
+      <div>
+        <h2>任务预设</h2>
+        <p class="pane-sub">编辑任务序列、约束与计算配置</p>
+      </div>
+      <div class="preset-actions">
+        <span id="presetLockHint" class="lock-hint hidden">只读 · Fork 后可修改</span>
+        <button id="forkBtn" class="ghost hidden" title="基于当前任务配置创建新任务">Fork 复刻</button>
+      </div>
     </div>
-    <textarea id="cfgJsonBox" rows="7" readonly placeholder="配置 JSON 预览…"></textarea>
+
+    <div id="presetBody">
+      <!-- 任务名 单独一行 (不属于任何子块) -->
+      <div class="field wide"><label>任务名</label><input id="cfgName" class="wide" value="" placeholder="Auto-generated"></div>
+
+      <div class="preset-layout">
+      <div class="preset-main">
+        <!-- ===== 子块 1: 任务序列配置 ===== -->
+        <details class="main-panel" open>
+          <summary>任务序列配置</summary>
+          <div class="preset-inline">
+            <label>预设</label>
+            <select id="presetSelect" class="wide"></select>
+            <button id="presetLoad" class="ghost">加载</button>
+            <button id="presetSave" class="ghost">保存</button>
+          </div>
+          <div class="form-group">
+            <div class="group-title">行星序列</div>
+            <div id="seqNodes" class="seq-nodes"></div>
+            <div class="actions"><button id="nodeAdd" class="ghost">+ 添加节点</button></div>
+          </div>
+          <div class="form-group">
+            <div class="group-title">每腿 TOF 边界</div>
+            <div id="tofTable"></div>
+          </div>
+          <div class="form-group">
+            <div class="group-title">目标与约束</div>
+            <div class="field"><label>目标</label>
+              <select id="cfgObjective" class="wide">
+                <option value="min_tof">最短飞行时间 (min TOF)</option>
+                <option value="min_dsm" selected>最小总 DSM (min DSM)</option>
+                <option value="custom">自定义</option>
+              </select>
+            </div>
+            <div id="customWrap" class="checks hidden">
+              <label>TOF 权重 <input id="cfgWToF" type="number" value="1" step="0.1" min="0"></label>
+              <label>DSM 权重 <input id="cfgWDsm" type="number" value="0" step="0.1" min="0"></label>
+              <label>L1 惩罚系数 <input id="cfgPenL1" type="number" value="10" step="1" min="0"></label>
+              <label>L2 惩罚系数 <input id="cfgPenL2" type="number" value="0.2" step="0.1" min="0"></label>
+            </div>
+            <div class="field"><label>DSM 上限</label><input id="cfgDsmLimit" type="number" value="600" step="10"></div>
+            <div class="field"><label>v∞ (km/s)</label>
+              <div class="field-controls">
+                <input id="cfgVinfL" type="number" value="3.5" step="0.1">
+                <span class="sep">~</span>
+                <input id="cfgVinfH" type="number" value="6.0" step="0.1">
+              </div>
+            </div>
+            <div class="field"><label>eta</label>
+              <div class="field-controls">
+                <input id="cfgEtaL" type="number" value="0.01" step="0.01">
+                <span class="sep">~</span>
+                <input id="cfgEtaH" type="number" value="0.9" step="0.01">
+              </div>
+            </div>
+            <div class="field"><label>rp 上界 (×R)</label><input id="cfgRpUb" type="number" value="200" step="1"></div>
+            <div class="field"><label>前沿罚 L1/L2</label>
+              <div class="field-controls">
+                <input id="cfgFPenL1" type="number" value="30" step="1" min="0">
+                <span class="sep">~</span>
+                <input id="cfgFPenL2" type="number" value="2" step="0.1" min="0">
+              </div>
+            </div>
+          </div>
+          <div class="form-group">
+            <div class="group-title">发射窗口 (era)</div>
+            <div id="eraTable"></div>
+            <button id="eraAdd" class="ghost">+ 窗口</button>
+          </div>
+        </details>
+      </div>
+
+      <aside class="preset-side">
+        <!-- ===== 子块 2: 计算配置 ===== -->
+        <details class="main-panel" open>
+          <summary>计算配置</summary>
+          <div class="form-group">
+            <div class="group-title">流水线与模式</div>
+            <div class="checks">
+              <label><input type="checkbox" id="cfgRunScan" checked> 扫描+细化</label>
+              <label><input type="checkbox" id="cfgRunSeed" checked> 弹道播种</label>
+              <label><input type="checkbox" id="cfgRunCompress" checked> 宽压缩</label>
+              <label><input type="checkbox" id="cfgRunFrontier" checked> 前沿压缩</label>
+            </div>
+          </div>
+          <div class="form-group">
+            <div class="group-title">并行与搜索</div>
+            <div class="field"><label>jobs</label><input id="cfgJobs" type="number" min="1" max="256"></div>
+            <div class="field"><label>步进 (d)</label><input id="cfgEraStep" type="number" value="60" min="1" max="365"></div>
+            <div class="field"><label>扫描保留 %</label>
+              <div class="range-wrap"><input id="cfgScanKeepPct" type="range" min="1" max="100" step="1" value="80"><output id="cfgScanKeepPctOut">80</output></div></div>
+            <div class="field"><label>细化保留 %</label>
+              <div class="range-wrap"><input id="cfgRefineKeepPct" type="range" min="1" max="100" step="1" value="80"><output id="cfgRefineKeepPctOut">80</output></div></div>
+          </div>
+        </details>
+
+        <div class="actions center">
+          <button id="runBtn" class="primary actions-run">&#9654; 提交计算</button>
+        </div>
+        <div class="actions">
+          <button id="saveCfg" class="ghost">保存配置 JSON</button>
+        </div>
+        <textarea id="cfgJsonBox" rows="7" readonly placeholder="配置 JSON 预览…"></textarea>
+      </aside>
+      </div>
+    </div>
   </section>
 
-  <!-- ================= 右: 日志 / 结果 ================= -->
-  <section class="panel right">
-    <div class="tabs">
-      <button id="tabLog" class="tab active">日志</button>
-      <button id="tabResult" class="tab">结果</button>
-    </div>
-
-    <div id="paneLog" class="pane active">
+  <!-- ===== 数据 ===== -->
+  <section id="paneData" class="pane active data-pane">
+    <div id="jobStateBar" class="state-bar"></div>
+    <div id="summaryCards" class="cards"></div>
+    <div id="legTable"></div>
+    <div id="flybyTable"></div>
+    <details id="logSection" class="log-section">
+      <summary>运行日志 <span id="logMeta" class="log-meta"></span></summary>
       <pre id="logBox">（提交任务后显示）</pre>
-      <div class="actions"><button id="logDown" class="ghost">下载 log.txt</button></div>
-    </div>
+      <div id="logActions" class="actions">
+        <button id="logDown" class="ghost">下载 log.txt</button>
+      </div>
+    </details>
+  </section>
 
-    <div id="paneResult" class="pane">
-      <div class="res-grid">
-        <div id="summaryCards" class="cards"></div>
-      </div>
-      <div id="legTable"></div>
-      <div id="flybyTable"></div>
-      <div id="chart" style="height:520px"></div>
-      <div class="actions">
-        <label class="inline-check"><input type="checkbox" id="dsmDirToggle" checked> 显示 DSM 方向</label>
-        <button id="pngDown" class="ghost">下载 PNG</button>
-        <button id="jsonDown" class="ghost">下载 result.json</button>
-      </div>
+  <!-- ===== 图示 ===== -->
+  <section id="panePlot" class="pane plot-pane">
+    <div class="actions plot-actions">
+      <label class="inline-check"><input type="checkbox" id="dsmDirToggle" checked> 显示 DSM 方向</label>
+      <button id="pngDown" class="ghost">下载 PNG</button>
+      <button id="jsonDown" class="ghost">下载 result.json</button>
     </div>
+    <div id="chart" class="chart"></div>
   </section>
 </main>
 
 <!-- 系统设置 / 关于 弹窗 (左侧导航切换) -->
 <div id="sysModal" class="modal hidden">
   <div class="modal-box paneled">
+    <button id="modalClose" class="modal-close" title="关闭" aria-label="关闭">&#10005;</button>
     <aside class="modal-side">
       <button class="side-item active" data-pane="settings">系统设置</button>
       <button class="side-item" data-pane="ephemeris">外部星历</button>
@@ -183,7 +223,6 @@
         <p class="hint">port=0 表示随机空闲端口。改动保存后需重启程序生效。</p>
         <div class="actions">
           <button id="sysSave" class="primary">保存</button>
-          <button id="sysClose" class="ghost">取消</button>
         </div>
       </div>
 
@@ -208,7 +247,6 @@
         <p class="hint" id="sysHorizonsMsg"></p>
         <div class="actions">
           <button id="sysEphSave" class="primary">保存</button>
-          <button id="sysEphClose" class="ghost">取消</button>
         </div>
       </div>
 
@@ -249,7 +287,6 @@
         <div class="actions">
           <button id="aboutRepo" class="ghost">项目主页</button>
           <button id="aboutReleases" class="ghost">发布页</button>
-          <button id="aboutClose" class="primary">关闭</button>
         </div>
       </div>
     </div>
@@ -260,3 +297,4 @@
 <script src="/static/app.js"></script>
 </body>
 </html>
+
