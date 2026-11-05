@@ -633,6 +633,14 @@ def create_app() -> Flask:
     def index():
         return render_template("index.html")
 
+    @app.get("/new")
+    def new_task_page():
+        return render_template("index.html")
+
+    @app.get("/jobs/<jid>")
+    def job_page(jid):
+        return render_template("index.html")
+
     @app.get("/logo.png")
     def logo():
         return send_from_directory(ROOT / "assets", "logo.png")

@@ -149,6 +149,15 @@ input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
   border: 1px solid var(--acc);
   color: var(--txt);
 }
+.inline-notice {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  background: rgba(255, 185, 0, .12);
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  color: var(--warn);
+  font-size: 12.5px;
+}
 
 /* ---------- 历史任务页 ---------- */
 .page-head {

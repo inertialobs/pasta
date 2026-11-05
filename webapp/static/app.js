@@ -54,6 +54,7 @@ const state = {
   resultJobId: null, plottedJobId: null,
   completedSeen: new Set(),
   failedImages: new Set(),
+  logFollow: true,
   plotlyReady: false,
   seq: [], pendingTofBounds: null, pendingLambert: null, busy: false, showDsmDir: true,
   timeMode: "elapsed", dsmMode: "total", arriveMode: "elapsed", lastResult: null,
@@ -638,6 +639,42 @@ function setView(name) {
   syncListPolling();
 }
 
+const BASE_TITLE = document.title;
+const DETAIL_TABS = new Set(["preset", "data", "plot"]);
+
+function tabFromUrl() {
+  const tab = new URLSearchParams(location.search).get("tab");
+  return DETAIL_TABS.has(tab) ? tab : null;
+}
+function jobPath(jid, tab) {
+  const path = `/jobs/${encodeURIComponent(jid)}`;
+  return tab ? `${path}?tab=${tab}` : path;
+}
+function newPath(tab) {
+  return tab ? `/new?tab=${tab}` : "/new";
+}
+function currentUrl() {
+  return location.pathname + location.search;
+}
+function navigateTo(url, replace = false) {
+  if (currentUrl() === url) return;
+  if (replace) history.replaceState(null, "", url);
+  else history.pushState(null, "", url);
+}
+function showRouteNotice(msg) {
+  const el = $("routeNotice");
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.remove("hidden");
+}
+function hideRouteNotice() {
+  const el = $("routeNotice");
+  if (el) el.classList.add("hidden");
+}
+function setDocTitle(name) {
+  document.title = name ? `${name} · PASTA` : BASE_TITLE;
+}
+
 function isTerminal(j) {
   return j && ["done", "failed", "cancelled"].includes(j.status);
 }
@@ -754,12 +791,15 @@ function manualRefreshJobs() {
   loadJobList();
 }
 
-async function showHistory() {
+async function showHistory({ updateUrl = true } = {}) {
   stopPolling();
   state.activeJobId = null;
   state.forkSourceId = null;
   $("detailName").textContent = "";
+  setDocTitle("");
+  hideRouteNotice();
   setView("history");
+  if (updateUrl) navigateTo("/");
   await loadJobList();
 }
 
@@ -775,7 +815,7 @@ function setPresetLocked(locked) {
   $("runBtn").disabled = !!locked;
 }
 
-async function openNewJob() {
+async function openNewJob({ updateUrl = true, tab = null, replaceUrl = false } = {}) {
   stopPolling();
   state.activeJobId = null;
   state.forkSourceId = null;
@@ -783,11 +823,15 @@ async function openNewJob() {
   state.plottedJobId = null;
   resetDetailPanes();
   setPresetLocked(false);
+  hideRouteNotice();
   $("detailName").textContent = "新建任务";
+  setDocTitle("新建任务");
   $("forkBtn").classList.add("hidden");
   setView("detail");
   await loadPresets();
-  switchDetailTab("preset");
+  const chosen = DETAIL_TABS.has(tab) ? tab : "preset";
+  switchDetailTab(chosen, { syncUrl: false });
+  if (updateUrl) navigateTo(newPath(chosen), replaceUrl);
 }
 
 async function loadJobConfig(jid) {
@@ -799,9 +843,9 @@ async function loadJobConfig(jid) {
   }
 }
 
-async function openJob(jid) {
+async function openJob(jid, { updateUrl = true, tab = null } = {}) {
   jid = String(jid || "");
-  if (!jid) return;
+  if (!jid) return false;
   stopPolling();
   state.activeJobId = jid;
   state.forkSourceId = jid;
@@ -809,6 +853,7 @@ async function openJob(jid) {
   state.plottedJobId = null;
   resetDetailPanes();
   setPresetLocked(true);
+  hideRouteNotice();
   setView("detail");
   $("detailName").textContent = jid;
   $("forkBtn").classList.add("hidden");
@@ -819,21 +864,29 @@ async function openJob(jid) {
       loadJobConfig(jid),
     ]);
   } catch (e) {
-    showHistory();
-    return;
+    await showHistory({ updateUrl: false });
+    navigateTo("/", true);
+    showRouteNotice("任务不存在或已删除");
+    return false;
   }
-  if (state.activeJobId !== jid) return;
+  if (state.activeJobId !== jid) return false;
   if (cfg) {
     fillTrajForm(cfg);
     $("forkBtn").classList.remove("hidden");
   } else {
     $("presetLockHint").textContent = "只读";
   }
+  $("detailName").textContent = j.name || jid;
+  setDocTitle(j.name || jid);
   updateJobDetail(j);
   const success = isSuccess(j);
   if (success) state.completedSeen.add(jid);
-  switchDetailTab(success ? "plot" : "data");
+  const chosen = DETAIL_TABS.has(tab) ? tab : (success ? "plot" : "data");
+  switchDetailTab(chosen, { syncUrl: false });
+  if (updateUrl) navigateTo(jobPath(jid, chosen));
+  else if (!tab) navigateTo(jobPath(jid, chosen), true);
   if (!isTerminal(j)) startPolling();
+  return true;
 }
 window.openJob = openJob;
 
@@ -846,10 +899,13 @@ function forkCurrent() {
   state.plottedJobId = null;
   resetDetailPanes();
   setPresetLocked(false);
+  hideRouteNotice();
   $("detailName").textContent = "新建任务（分支）";
+  setDocTitle("新建任务");
   $("forkBtn").classList.add("hidden");
   updateConfigJson();
-  switchDetailTab("preset");
+  switchDetailTab("preset", { syncUrl: false });
+  navigateTo(newPath("preset"));
 }
 
 async function deleteJob(jid) {
@@ -879,13 +935,14 @@ $("jobSearch").addEventListener("input", (e) => {
   state.jobSearch = e.target.value;
   renderJobGrid();
 });
-$("newJobBtn").addEventListener("click", openNewJob);
+$("newJobBtn").addEventListener("click", () => openNewJob());
 $("refreshJobs").addEventListener("click", manualRefreshJobs);
-$("backBtn").addEventListener("click", showHistory);
+$("backBtn").addEventListener("click", () => showHistory());
 $("forkBtn").addEventListener("click", forkCurrent);
 
 /* ---------- 详情 Tab ---------- */
-function switchDetailTab(tab) {
+function switchDetailTab(tab, { syncUrl = true } = {}) {
+  if (!DETAIL_TABS.has(tab)) tab = "preset";
   state.detailTab = tab;
   const map = [
     ["preset", "tabPreset", "panePreset"],
@@ -907,10 +964,43 @@ function switchDetailTab(tab) {
       if (typeof Plotly !== "undefined") Plotly.Plots.resize($("chart"));
     }, 30);
   }
+  if (syncUrl && state.view === "detail") {
+    const url = state.activeJobId ? jobPath(state.activeJobId, tab) : newPath(tab);
+    navigateTo(url, true);
+  }
 }
 $("tabPreset").addEventListener("click", () => switchDetailTab("preset"));
 $("tabData").addEventListener("click", () => switchDetailTab("data"));
 $("tabPlot").addEventListener("click", () => switchDetailTab("plot"));
+
+async function applyRoute() {
+  const path = location.pathname.replace(/\/+$/, "") || "/";
+  const tab = tabFromUrl();
+  hideRouteNotice();
+  if (path === "/new") {
+    await openNewJob({ updateUrl: false, tab: tab || "preset" });
+    return;
+  }
+  const match = path.match(/^\/jobs\/([^/]+)$/);
+  if (match) {
+    let jid = match[1];
+    try { jid = decodeURIComponent(jid); } catch (e) { /* keep raw */ }
+    await openJob(jid, { updateUrl: false, tab });
+    return;
+  }
+  if (path === "/") {
+    if (!state.jobs.length) {
+      await openNewJob({ updateUrl: true, replaceUrl: true, tab: tab || "preset" });
+    } else {
+      await showHistory({ updateUrl: false });
+    }
+    return;
+  }
+  await showHistory({ updateUrl: false });
+  navigateTo("/", true);
+  showRouteNotice("页面不存在，已返回历史任务");
+}
+window.addEventListener("popstate", () => { applyRoute(); });
 
 /* ---------- 结果表列切换 ---------- */
 const LS_KEY = { timeMode: "pasta.timeMode", dsmMode: "pasta.dsmMode", arriveMode: "pasta.arriveMode" };
@@ -962,6 +1052,7 @@ function resetDetailPanes() {
   $("chart").innerHTML = "";
   $("logBox").textContent = "（提交任务后显示）";
   $("logMeta").textContent = "";
+  state.logFollow = true;
   const sec = $("logSection");
   sec.open = false;
   if (sec.parentElement === $("paneData")) $("paneData").appendChild(sec);
@@ -980,9 +1071,11 @@ function renderStateBar(j) {
 function setLogText(j) {
   const box = $("logBox");
   box.textContent = (j.log_tail || []).join("\n");
-  if ($("logSection").open) box.scrollTop = box.scrollHeight;
   const n = j.log_len != null ? j.log_len : (j.log_tail || []).length;
   $("logMeta").textContent = n ? `${n} 行` : "";
+  if ($("logSection").open && state.logFollow) {
+    requestAnimationFrame(() => { box.scrollTop = box.scrollHeight; });
+  }
 }
 
 function setLogLayout(success) {
@@ -996,6 +1089,17 @@ function setLogLayout(success) {
     pane.prepend(sec);
   }
 }
+$("logBox").addEventListener("scroll", () => {
+  const box = $("logBox");
+  state.logFollow = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+});
+$("logSection").addEventListener("toggle", () => {
+  const sec = $("logSection");
+  if (sec.open && state.logFollow) {
+    const box = $("logBox");
+    requestAnimationFrame(() => { box.scrollTop = box.scrollHeight; });
+  }
+});
 
 function updateJobDetail(j) {
   if (!j || state.activeJobId !== j.job_id) return;
@@ -1003,7 +1107,6 @@ function updateJobDetail(j) {
     x.job_id === j.job_id ? { ...x, ...j } : x);
   $("detailName").textContent = j.name || j.job_id;
   renderStateBar(j);
-  setLogText(j);
   const success = isSuccess(j);
   const terminal = isTerminal(j);
   if (j.status === "done" && j.has_result) {
@@ -1011,17 +1114,13 @@ function updateJobDetail(j) {
   } else {
     state.lastResult = null;
     state.resultJobId = null;
-    renderTables();
+    $("summaryCards").innerHTML = "";
+    $("legTable").innerHTML = "";
+    $("flybyTable").innerHTML = "";
     $("chart").innerHTML = "";
-    if (["failed", "cancelled"].includes(j.status)) {
-      $("summaryCards").innerHTML = `<div class="card bad"><div class="k">状态</div>
-        <div class="v">${escapeHtml(j.status)}</div></div>`;
-    } else {
-      $("summaryCards").innerHTML = `<div class="card wide"><div class="k">状态</div>
-        <div class="v">${escapeHtml(j.status || "starting")} · 计算中…</div></div>`;
-    }
   }
   setLogLayout(success);
+  setLogText(j);
   if (terminal) stopPolling();
 }
 
@@ -1700,7 +1799,5 @@ document.addEventListener("pointermove", (e) => {
   await loadPresets();
   await loadCompCfg();
   await loadJobList();
-  // 首次使用 (没有历史任务) 直接进入新建任务，避免空白页。
-  if (!state.jobs.length) await openNewJob();
-  else setView("history");
+  await applyRoute();
 })();
