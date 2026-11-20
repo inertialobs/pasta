@@ -632,10 +632,28 @@ $("saveCfg").addEventListener("click", () => {
 /* ============================================================
  * 页面导航与任务列表
  * ============================================================ */
-function setView(name) {
+function _clearViewAnimation(el) {
+  el.classList.remove("view-in-left", "view-in-right", "is-animating");
+}
+function animateView(el, direction) {
+  _clearViewAnimation(el);
+  void el.offsetWidth;
+  el.classList.add(direction === "left" ? "view-in-left" : "view-in-right", "is-animating");
+  const done = () => _clearViewAnimation(el);
+  el.addEventListener("animationend", done, { once: true });
+  setTimeout(done, 320);
+}
+function setView(name, { animate = false, direction = null } = {}) {
   state.view = name;
-  $("viewHistory").classList.toggle("active", name === "history");
-  $("viewDetail").classList.toggle("active", name === "detail");
+  const history = $("viewHistory");
+  const detail = $("viewDetail");
+  const target = name === "history" ? history : detail;
+  const other = name === "history" ? detail : history;
+  other.classList.remove("active");
+  _clearViewAnimation(other);
+  target.classList.add("active");
+  if (animate) animateView(target, direction || (name === "history" ? "left" : "right"));
+  else _clearViewAnimation(target);
   syncListPolling();
 }
 
@@ -791,14 +809,14 @@ function manualRefreshJobs() {
   loadJobList();
 }
 
-async function showHistory({ updateUrl = true } = {}) {
+async function showHistory({ updateUrl = true, animate = true } = {}) {
   stopPolling();
   state.activeJobId = null;
   state.forkSourceId = null;
   $("detailName").textContent = "";
   setDocTitle("");
   hideRouteNotice();
-  setView("history");
+  setView("history", { animate, direction: "left" });
   if (updateUrl) navigateTo("/");
   await loadJobList();
 }
@@ -815,7 +833,7 @@ function setPresetLocked(locked) {
   $("runBtn").disabled = !!locked;
 }
 
-async function openNewJob({ updateUrl = true, tab = null, replaceUrl = false } = {}) {
+async function openNewJob({ updateUrl = true, tab = null, replaceUrl = false, animate = true } = {}) {
   stopPolling();
   state.activeJobId = null;
   state.forkSourceId = null;
@@ -827,10 +845,10 @@ async function openNewJob({ updateUrl = true, tab = null, replaceUrl = false } =
   $("detailName").textContent = "新建任务";
   setDocTitle("新建任务");
   $("forkBtn").classList.add("hidden");
-  setView("detail");
+  setView("detail", { animate, direction: "right" });
   await loadPresets();
   const chosen = DETAIL_TABS.has(tab) ? tab : "preset";
-  switchDetailTab(chosen, { syncUrl: false });
+  switchDetailTab(chosen, { syncUrl: false, animate: false });
   if (updateUrl) navigateTo(newPath(chosen), replaceUrl);
 }
 
@@ -843,7 +861,7 @@ async function loadJobConfig(jid) {
   }
 }
 
-async function openJob(jid, { updateUrl = true, tab = null } = {}) {
+async function openJob(jid, { updateUrl = true, tab = null, animate = true } = {}) {
   jid = String(jid || "");
   if (!jid) return false;
   stopPolling();
@@ -854,7 +872,7 @@ async function openJob(jid, { updateUrl = true, tab = null } = {}) {
   resetDetailPanes();
   setPresetLocked(true);
   hideRouteNotice();
-  setView("detail");
+  setView("detail", { animate, direction: "right" });
   $("detailName").textContent = jid;
   $("forkBtn").classList.add("hidden");
   let j, cfg;
@@ -864,7 +882,7 @@ async function openJob(jid, { updateUrl = true, tab = null } = {}) {
       loadJobConfig(jid),
     ]);
   } catch (e) {
-    await showHistory({ updateUrl: false });
+    await showHistory({ updateUrl: false, animate: false });
     navigateTo("/", true);
     showRouteNotice("任务不存在或已删除");
     return false;
@@ -882,7 +900,7 @@ async function openJob(jid, { updateUrl = true, tab = null } = {}) {
   const success = isSuccess(j);
   if (success) state.completedSeen.add(jid);
   const chosen = DETAIL_TABS.has(tab) ? tab : (success ? "plot" : "data");
-  switchDetailTab(chosen, { syncUrl: false });
+  switchDetailTab(chosen, { syncUrl: false, animate: false });
   if (updateUrl) navigateTo(jobPath(jid, chosen));
   else if (!tab) navigateTo(jobPath(jid, chosen), true);
   if (!isTerminal(j)) startPolling();
@@ -941,8 +959,42 @@ $("backBtn").addEventListener("click", () => showHistory());
 $("forkBtn").addEventListener("click", forkCurrent);
 
 /* ---------- 详情 Tab ---------- */
-function switchDetailTab(tab, { syncUrl = true } = {}) {
+const TAB_ORDER = ["preset", "data", "plot"];
+let tabIndicatorReady = false;
+
+function updateTabIndicator({ animate = true } = {}) {
+  const bar = $("tabIndicator");
+  const tabs = document.querySelector(".detail-tabs");
+  const active = document.querySelector(".detail-tabs .tab.active");
+  if (!bar || !tabs || !active) return;
+  const tr = tabs.getBoundingClientRect();
+  const ar = active.getBoundingClientRect();
+  if (!ar.width) return;
+  const useTransition = animate && tabIndicatorReady;
+  if (!useTransition) bar.style.transition = "none";
+  bar.style.width = `${ar.width}px`;
+  bar.style.transform = `translateX(${ar.left - tr.left}px)`;
+  if (!useTransition) {
+    void bar.offsetWidth;
+    bar.style.transition = "";
+  }
+  tabIndicatorReady = true;
+}
+
+function animatePane(pane, direction) {
+  pane.classList.remove("pane-in-left", "pane-in-right");
+  void pane.offsetWidth;
+  pane.classList.add(direction === "left" ? "pane-in-left" : "pane-in-right");
+  const done = () => pane.classList.remove("pane-in-left", "pane-in-right");
+  pane.addEventListener("animationend", done, { once: true });
+  setTimeout(done, 260);
+}
+
+function switchDetailTab(tab, { syncUrl = true, animate = true } = {}) {
   if (!DETAIL_TABS.has(tab)) tab = "preset";
+  const prev = state.detailTab;
+  const prevIdx = TAB_ORDER.indexOf(prev);
+  const nextIdx = TAB_ORDER.indexOf(tab);
   state.detailTab = tab;
   const map = [
     ["preset", "tabPreset", "panePreset"],
@@ -953,6 +1005,13 @@ function switchDetailTab(tab, { syncUrl = true } = {}) {
     $(tabId).classList.toggle("active", key === tab);
     $(paneId).classList.toggle("active", key === tab);
   });
+  const pane = $(map[Math.max(0, nextIdx)][2]);
+  if (animate && prev !== tab) {
+    animatePane(pane, nextIdx < prevIdx ? "left" : "right");
+  } else {
+    pane.classList.remove("pane-in-left", "pane-in-right");
+  }
+  updateTabIndicator({ animate });
   if (tab === "data") renderTables();
   if (tab === "plot") {
     setTimeout(() => {
@@ -963,6 +1022,10 @@ function switchDetailTab(tab, { syncUrl = true } = {}) {
       if (state.plottedJobId !== state.activeJobId) renderPlot(state.activeJobId);
       if (typeof Plotly !== "undefined") Plotly.Plots.resize($("chart"));
     }, 30);
+    setTimeout(() => {
+      if (state.detailTab === "plot" && typeof Plotly !== "undefined")
+        Plotly.Plots.resize($("chart"));
+    }, 240);
   }
   if (syncUrl && state.view === "detail") {
     const url = state.activeJobId ? jobPath(state.activeJobId, tab) : newPath(tab);
@@ -972,35 +1035,36 @@ function switchDetailTab(tab, { syncUrl = true } = {}) {
 $("tabPreset").addEventListener("click", () => switchDetailTab("preset"));
 $("tabData").addEventListener("click", () => switchDetailTab("data"));
 $("tabPlot").addEventListener("click", () => switchDetailTab("plot"));
+window.addEventListener("resize", () => updateTabIndicator({ animate: false }));
 
-async function applyRoute() {
+async function applyRoute({ animate = false } = {}) {
   const path = location.pathname.replace(/\/+$/, "") || "/";
   const tab = tabFromUrl();
   hideRouteNotice();
   if (path === "/new") {
-    await openNewJob({ updateUrl: false, tab: tab || "preset" });
+    await openNewJob({ updateUrl: false, tab: tab || "preset", animate });
     return;
   }
   const match = path.match(/^\/jobs\/([^/]+)$/);
   if (match) {
     let jid = match[1];
     try { jid = decodeURIComponent(jid); } catch (e) { /* keep raw */ }
-    await openJob(jid, { updateUrl: false, tab });
+    await openJob(jid, { updateUrl: false, tab, animate });
     return;
   }
   if (path === "/") {
     if (!state.jobs.length) {
-      await openNewJob({ updateUrl: true, replaceUrl: true, tab: tab || "preset" });
+      await openNewJob({ updateUrl: true, replaceUrl: true, tab: tab || "preset", animate });
     } else {
-      await showHistory({ updateUrl: false });
+      await showHistory({ updateUrl: false, animate });
     }
     return;
   }
-  await showHistory({ updateUrl: false });
+  await showHistory({ updateUrl: false, animate });
   navigateTo("/", true);
   showRouteNotice("页面不存在，已返回历史任务");
 }
-window.addEventListener("popstate", () => { applyRoute(); });
+window.addEventListener("popstate", () => { applyRoute({ animate: true }); });
 
 /* ---------- 结果表列切换 ---------- */
 const LS_KEY = { timeMode: "pasta.timeMode", dsmMode: "pasta.dsmMode", arriveMode: "pasta.arriveMode" };
@@ -1799,5 +1863,5 @@ document.addEventListener("pointermove", (e) => {
   await loadPresets();
   await loadCompCfg();
   await loadJobList();
-  await applyRoute();
+  await applyRoute({ animate: false });
 })();

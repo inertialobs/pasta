@@ -127,6 +127,24 @@ input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
 /* ---------- 视图切换 ---------- */
 .view { display: none; }
 .view.active { display: block; }
+.view.view-in-right { animation: view-in-right .18s cubic-bezier(.2, 0, 0, 1) both; }
+.view.view-in-left { animation: view-in-left .18s cubic-bezier(.2, 0, 0, 1) both; }
+.view.is-animating { pointer-events: none; }
+@keyframes view-in-right {
+  from { opacity: .55; transform: translateX(24px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes view-in-left {
+  from { opacity: .55; transform: translateX(-24px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .view.view-in-right,
+  .view.view-in-left,
+  .pane.pane-in-right,
+  .pane.pane-in-left { animation: none !important; }
+  .tab-indicator { transition: none !important; }
+}
 #viewHistory, #viewDetail {
   max-width: 1280px;
   margin: 0 auto;
@@ -383,9 +401,19 @@ input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
 .tab:hover { background: var(--hover); color: var(--txt); }
 .tab.active {
   color: var(--txt);
-  border-bottom-color: var(--acc);
   font-weight: 600;
   background: transparent;
+}
+.tab-indicator {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 0;
+  height: 2px;
+  background: var(--acc);
+  pointer-events: none;
+  transition: transform .16s cubic-bezier(.2, 0, 0, 1),
+              width .16s cubic-bezier(.2, 0, 0, 1);
 }
 .detail-name {
   margin-left: auto;
@@ -399,6 +427,16 @@ input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
 }
 .pane { display: none; }
 .pane.active { display: block; }
+.pane.pane-in-right { animation: pane-in-right .16s cubic-bezier(.2, 0, 0, 1) both; }
+.pane.pane-in-left { animation: pane-in-left .16s cubic-bezier(.2, 0, 0, 1) both; }
+@keyframes pane-in-right {
+  from { opacity: .5; transform: translateX(18px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes pane-in-left {
+  from { opacity: .5; transform: translateX(-18px); }
+  to { opacity: 1; transform: translateX(0); }
+}
 .pane-head {
   display: flex;
   align-items: flex-start;
