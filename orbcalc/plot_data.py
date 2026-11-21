@@ -166,88 +166,93 @@ def build_plot_json(cfg, info):
     return result
 
 
-def render_png(cfg, info, path):
-    """matplotlib Agg 静态图 (服务端渲染, 无交互窗口)."""
+def _extend_bounds(points, xs, ys, zs):
+    points.extend(zip(xs, ys, zs))
+
+
+def _fit_3d_limits(ax, points):
+    """按实际绘制几何自动取景, 让任务主体轨道尽量占满画布."""
+    if not points:
+        return
+    xs, ys, zs = zip(*points)
+    xmin, xmax = min(xs), max(xs)
+    ymin, ymax = min(ys), max(ys)
+    zmin, zmax = min(zs), max(zs)
+    cx = 0.5 * (xmin + xmax)
+    cy = 0.5 * (ymin + ymax)
+    cz = 0.5 * (zmin + zmax)
+    radius = max(xmax - xmin, ymax - ymin, 1.0) * 0.5 * 1.12
+    zradius = max((zmax - zmin) * 0.5 * 1.2, radius * 0.15, 0.25)
+    ax.set_xlim3d(cx - radius, cx + radius)
+    ax.set_ylim3d(cy - radius, cy + radius)
+    ax.set_zlim3d(cz - zradius, cz + zradius)
+    # 俯视图下压缩 z 方向的盒体比例, 让 x-y 主体轨道占满画布
+    ax.set_proj_type("ortho")
+    ax.set_box_aspect((1.0, 1.0, max(0.12, min(1.0, zradius / radius))), zoom=1.35)
+
+
+def render_png_from_plot(plot, path):
+    """由 plot.json 结构渲染静态 PNG (与网页 3D 图使用同一份几何)."""
     import matplotlib
     matplotlib.use("Agg", force=True)
     import matplotlib.pyplot as plt
 
-    mu = pk.MU_SUN
-    seq = cfg.seq
-    epochs = info["epochs"]
-    t_mid = 0.5 * (epochs[0] + epochs[-1])
-
     ax = pk.plot.make_3Daxis(figsize=(9, 8))
     pk.plot.add_sun(ax, s=80)
+    points = [(0.0, 0.0, 0.0)]
 
-    for idx, tag in enumerate(seq):
-        pla = get_planet(tag)
-        if tag in _INNER:
-            half = PERIOD.get(tag, 365.25) / 2.0
-            _plot_arc(ax, pla, t_mid - half, t_mid + half,
-                      c=BODY_COLOR.get(tag, "gray"), alpha=0.7, lw=1.2)
-        else:
-            _plot_arc(ax, pla, epochs[0], epochs[-1],
-                      c=BODY_COLOR.get(tag, "gray"), alpha=0.7, lw=1.2)
+    for body in plot.get("bodies") or []:
+        color = body.get("color", "gray")
+        orbit = body.get("orbit") or {}
+        xs, ys, zs = orbit.get("x") or [], orbit.get("y") or [], orbit.get("z") or []
+        if len(xs) >= 2:
+            ax.plot(xs, ys, zs, color=color, alpha=0.7, lw=1.2)
+            _extend_bounds(points, xs, ys, zs)
+        for enc in body.get("encounters") or []:
+            ex, ey, ez = enc.get("x"), enc.get("y"), enc.get("z")
+            if ex is None or ey is None or ez is None:
+                continue
+            ax.scatter([ex], [ey], [ez], c=color, s=25, alpha=0.9, zorder=4)
+            points.append((ex, ey, ez))
 
-    blegs, bep = info["blegs"], info["bep"]
-    vecs_all = info.get("dsm_vecs") or []
-    for i in range(len(epochs) - 1):
-        r0, v0 = blegs[2 * i]
-        t_a, t_b = bep[2 * i], bep[2 * i + 1]
-        dt_b = (t_b - t_a) * pk.DAY2SEC
-        if dt_b > 0:
-            _plot_polyline(ax, [r0, v0], dt_b, mu, c="pink", lw=1.8, alpha=0.9)
-        r_dsm, v_dsm = blegs[2 * i + 1]
-        dt_l = (epochs[i + 1] - t_b) * pk.DAY2SEC
-        if dt_l > 0:
-            _plot_polyline(ax, [r_dsm, v_dsm], dt_l, mu, c="pink", lw=1.8, alpha=0.9)
-        ax.scatter([r_dsm[0] / pk.AU], [r_dsm[1] / pk.AU], [r_dsm[2] / pk.AU],
-                   c="darkviolet", marker="*", s=28, zorder=5)
-        if i < len(vecs_all):
-            u = _unit(vecs_all[i])
-            if u is not None:
-                ax.quiver([r_dsm[0] / pk.AU], [r_dsm[1] / pk.AU], [r_dsm[2] / pk.AU],
-                          [u[0]], [u[1]], [u[2]],
-                          length=DSM_ARROW_AU, normalize=True, color="crimson",
-                          arrow_length_ratio=0.25, lw=1.2, zorder=6)
+    arrow_au = plot.get("dsm_arrow_au") or DSM_ARROW_AU
+    for leg in plot.get("legs") or []:
+        for key in ("ballistic", "lambert"):
+            seg = leg.get(key) or {}
+            xs, ys, zs = seg.get("x") or [], seg.get("y") or [], seg.get("z") or []
+            if len(xs) >= 2:
+                ax.plot(xs, ys, zs, color="pink", alpha=0.9, lw=1.8)
+                _extend_bounds(points, xs, ys, zs)
+        dsm = leg.get("dsm") or {}
+        dx, dy, dz = dsm.get("x"), dsm.get("y"), dsm.get("z")
+        if dx is None or dy is None or dz is None:
+            continue
+        ax.scatter([dx], [dy], [dz], c="darkviolet", marker="*", s=28, zorder=5)
+        points.append((dx, dy, dz))
+        unit = dsm.get("unit")
+        if isinstance(unit, list) and len(unit) == 3:
+            ax.quiver([dx], [dy], [dz], [unit[0]], [unit[1]], [unit[2]],
+                      length=arrow_au, normalize=True, color="crimson",
+                      arrow_length_ratio=0.25, lw=1.2, zorder=6)
 
-    try:
-        for pla, e in zip([get_planet(t) for t in seq], [pk.epoch(v) for v in epochs]):
-            pk.plot.add_planet(ax, pla, when=e, units=pk.AU, s=25, alpha=0.9)
-    except Exception:
-        pass
-
-    ax.set_title(f"{cfg.name} MGA-1DSM (de440s)\n"
-                 f"Launch {pk.epoch(epochs[0]).to_datetime().date()}  ·  "
-                 f"TOF = {sum(info['tofs']) / 365.25:.2f} yr  ·  "
-                 f"Total DSM = {info['dsm_total']:.0f} m/s", fontsize=11)
+    name = plot.get("name") or "MGA-1DSM"
+    epochs_iso = plot.get("epochs_iso") or []
+    launch = str(epochs_iso[0])[:10] if epochs_iso else ""
+    title = f"{name} MGA-1DSM (de440s)\n"
+    if launch:
+        title += f"Launch {launch}  ·  "
+    title += (f"TOF = {float(plot.get('tof_yr') or 0.0):.2f} yr  ·  "
+              f"Total DSM = {float(plot.get('dsm_total_ms') or 0.0):.0f} m/s")
+    ax.set_title(title, fontsize=11)
     ax.view_init(elev=90, azim=-90)
-    lim = 22.0
-    ax.set_xlim3d(-lim, lim); ax.set_ylim3d(-lim, lim); ax.set_zlim3d(-1.0, 1.0)
+    _fit_3d_limits(ax, points)
     ax.axis("off")
     plt.tight_layout()
-    plt.savefig(path, dpi=150)
+    ax.figure.subplots_adjust(left=0.01, right=0.99, bottom=0.01, top=0.88)
+    plt.savefig(path, dpi=150, bbox_inches="tight", pad_inches=0.02)
     plt.close(ax.figure)
 
 
-def _plot_arc(ax, pla, t0, t1, **kw):
-    a, b = _clamp(t0, t1)
-    xs, ys, zs = [], [], []
-    for e in np.linspace(a, b, 200):
-        try:
-            r, _ = pla.eph(pk.epoch(float(e)))
-        except Exception:
-            continue
-        xs.append(r[0] / pk.AU); ys.append(r[1] / pk.AU); zs.append(r[2] / pk.AU)
-    if len(xs) >= 2:
-        ax.plot(xs, ys, zs, **kw)
-
-
-def _plot_polyline(ax, rv0, dt_sec, mu, N=120, **kw):
-    r0, v0 = rv0[0], rv0[1]
-    xs, ys, zs = [], [], []
-    for k in range(N + 1):
-        r, v = pk.propagate_lagrangian([r0, v0], dt_sec * k / N, mu)
-        xs.append(r[0] / pk.AU); ys.append(r[1] / pk.AU); zs.append(r[2] / pk.AU)
-    ax.plot(xs, ys, zs, **kw)
+def render_png(cfg, info, path):
+    """兼容入口: 从 cfg/info 构建 plot 数据后渲染 PNG."""
+    render_png_from_plot(build_plot_json(cfg, info), path)

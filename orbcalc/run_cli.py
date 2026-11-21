@@ -41,7 +41,7 @@ from .config import TrajConfig, ensure_project_name
 from .planets import set_active
 from .udp import TOF_UDP, DSM_UDP
 from .decode_report import summarize
-from .plot_data import build_plot_json, render_png
+from .plot_data import build_plot_json, render_png_from_plot
 from .selection import candidate_key, select_key
 from .stages import (phase_scan_mp, phase_refine_mp, phase_ballistic_seed_mp,
                      compress_pass_mp, pick_best)
@@ -200,10 +200,11 @@ def _write_artifacts(args, cfg, info, bx, summary, t_start):
         summary.update(summarize(info, cfg))
         summary["elapsed_s"] = round(time.time() - t_start, 1)
         np.save(os.path.join(args.outdir, "best_x.npy"), np.array(bx))
+        plot = build_plot_json(cfg, info)
         with open(os.path.join(args.outdir, "plot.json"), "w", encoding="utf-8") as f:
-            json.dump(build_plot_json(cfg, info), f, ensure_ascii=False)
+            json.dump(plot, f, ensure_ascii=False)
         try:
-            render_png(cfg, info, os.path.join(args.outdir, "trajectory.png"))
+            render_png_from_plot(plot, os.path.join(args.outdir, "trajectory.png"))
             slog.inf(f"[artifacts] png -> {os.path.join(args.outdir, 'trajectory.png')}")
         except Exception as e:
             slog.wrn(f"[artifacts] png skipped: {e}")
