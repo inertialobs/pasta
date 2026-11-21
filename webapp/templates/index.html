@@ -69,7 +69,7 @@
 
     <div id="presetBody">
       <!-- 任务名 单独一行 (不属于任何子块) -->
-      <div class="field wide"><label>任务名</label><input id="cfgName" class="wide" value="" placeholder="Auto-generated"></div>
+      <div class="field wide"><label>任务名</label><input id="cfgName" value="" placeholder="Auto-generated"></div>
 
       <div class="preset-layout">
       <div class="preset-main">
@@ -78,7 +78,7 @@
           <summary>任务序列配置</summary>
           <div class="preset-inline">
             <label>预设</label>
-            <select id="presetSelect" class="wide"></select>
+            <select id="presetSelect"></select>
             <button id="presetLoad" class="ghost">加载</button>
             <button id="presetSave" class="ghost">保存</button>
           </div>
@@ -94,7 +94,7 @@
           <div class="form-group">
             <div class="group-title">目标与约束</div>
             <div class="field"><label>目标</label>
-              <select id="cfgObjective" class="wide">
+              <select id="cfgObjective">
                 <option value="min_tof">最短飞行时间 (min TOF)</option>
                 <option value="min_dsm" selected>最小总 DSM (min DSM)</option>
                 <option value="custom">自定义</option>
@@ -163,7 +163,7 @@
         </details>
 
         <div class="actions center">
-          <button id="runBtn" class="primary actions-run">&#9654; 提交计算</button>
+          <button id="runBtn" class="primary">&#9654; 提交计算</button>
         </div>
         <div class="actions">
           <button id="saveCfg" class="ghost">保存配置 JSON</button>
@@ -190,7 +190,7 @@
   </section>
 
   <!-- ===== 图示 ===== -->
-  <section id="panePlot" class="pane plot-pane">
+  <section id="panePlot" class="pane">
     <div class="actions plot-actions">
       <label class="inline-check"><input type="checkbox" id="dsmDirToggle" checked> 显示 DSM 方向</label>
       <button id="pngDown" class="ghost">下载 PNG</button>

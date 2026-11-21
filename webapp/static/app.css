@@ -162,11 +162,6 @@ input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
   border: 1px solid var(--warn);
   color: var(--warn);
 }
-.banner.hint {
-  background: rgba(0, 120, 215, .12);
-  border: 1px solid var(--acc);
-  color: var(--txt);
-}
 .inline-notice {
   margin: 0 0 12px;
   padding: 10px 12px;

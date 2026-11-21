@@ -906,8 +906,6 @@ async function openJob(jid, { updateUrl = true, tab = null, animate = true } = {
   if (!isTerminal(j)) startPolling();
   return true;
 }
-window.openJob = openJob;
-
 function forkCurrent() {
   if (!state.forkSourceId) return;
   $("cfgName").value = "";   // 留空, 显示 Auto-generated, 提交时由后端自动命名
